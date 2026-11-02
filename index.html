@@ -313,6 +313,8 @@
   .bigmap-zoom span { font-weight: bold; font-size: 1.1rem; }
   .bigmap-zoom button { padding: 4px 8px; border-radius: 12px; }
   .bigmap-key { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sab, 0px) + 10px); font-size: .74rem; color: var(--muted); white-space: nowrap; }
+  .size-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .size-pick button.style { font-size: .95rem; padding: 9px 10px; }
   .setrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .setrow input[type=range] { flex: 1; min-width: 140px; accent-color: #ffd860; }
   /* keep the lobby, creator and stats panel clear of the Dynamic Island and the home bar (full-screen Home Screen mode) */
@@ -339,6 +341,11 @@
       </div>
       <label for="my-name">Your name</label>
       <input id="my-name" class="field" maxlength="12" placeholder="e.g. Sam" autocomplete="off">
+      <label>Lobby size</label>
+      <div class="choices size-pick" id="size-pick">
+        <button class="style" data-size="2">👥 2 anglers</button>
+        <button class="style" data-size="4">👨‍👩‍👧‍👦 4 anglers</button>
+      </div>
       <div style="margin-top:12px"><button id="create" class="btn-gold" style="width:100%;padding:10px">🎣 Create lobby</button></div>
       <div class="or">— or join a friend —</div>
       <div class="row"><input id="join-code" class="field code-input" maxlength="5" placeholder="CODE" autocomplete="off"><button id="join">Join lobby</button></div>
@@ -867,7 +874,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1645";
+const BUILD = "2026.11.02-1700";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1239,6 +1246,9 @@ function priceOf(item) {
 let state = null;
 let net = { peer: null, conn: null, conns: new Map(), isHost: false, seat: 0, code: "", connected: false };
 const online = i => !!state && !!state.players[i] && (i === net.seat || !!state.players[i].online);
+// lobby size chosen when the room is made (2 or 4); older saves without one allow the full 4
+const roomMax = () => (state && (state.maxPlayers === 2 || state.maxPlayers === 4)) ? state.maxPlayers : MAX_PLAYERS;
+const pickedSize = () => ((readJSON(PREFS_KEY) || {}).lobbySize === 2 ? 2 : 4);
 const onlineCount = () => state ? state.players.filter((p, i) => online(i)).length : 1;
 function newPlayer(i) {
   return { name: "Player " + (i + 1), look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down", cid: null, online: false,
@@ -1497,7 +1507,8 @@ function hostLobby(code) {
   peer.on("open", () => {
     net.isHost = true; net.seat = 0; net.code = code;
     const saved = readJSON(saveKey(code));
-    state = saved && saved.players ? migrate(saved) : newGame();
+    state = saved && saved.players ? migrate(saved) : Object.assign(newGame(), { maxPlayers: pickedSize() });
+    if (!saved && state.maxPlayers === 2) addLog("A cosy lobby for two anglers.", true);
     state.players.forEach(p => p.line = null);
     state.tz = new Date().getTimezoneOffset();
     state.players[0].name = name; state.players[0].look = myLook; state.players[0].cid = CID;
@@ -1541,8 +1552,10 @@ function onHostData(c, msg) {
     // your old seat if you've been here before; else an unclaimed old seat; else a new seat
     let seat = state.players.findIndex((p, i) => i > 0 && p.cid === cid);
     if (seat < 0) seat = state.players.findIndex((p, i) => i > 0 && !p.cid && !p.online);
-    if (seat < 0 && state.players.length < MAX_PLAYERS) { seat = state.players.length; state.players.push(newPlayer(seat)); }
-    if (seat < 0) { c.send({ type: "full" }); setTimeout(() => c.close(), 300); return; }
+    if (seat < 0 && state.players.length < roomMax()) { seat = state.players.length; state.players.push(newPlayer(seat)); }
+    if (seat < 0 && onlineCount() >= roomMax()) { c.send({ type: "full", max: roomMax() }); setTimeout(() => c.close(), 300); return; }
+    if (seat < 0) seat = state.players.findIndex((p, i) => i > 0 && !p.online);   // the room has an away seat: hand it over
+    if (seat < 0) { c.send({ type: "full", max: roomMax() }); setTimeout(() => c.close(), 300); return; }
     const old = net.conns.get(seat); if (old && old !== c) { old._seat = null; try { old.close(); } catch {} }
     c._seat = seat; net.conns.set(seat, c);
     const g = state.players[seat];
@@ -1603,7 +1616,7 @@ function joinLobby(code) {
     net.conn = c;
     c.on("open", () => c.send({ type: "hello", name, look: myLook, cid: CID, saved: readJSON(saveKey(code)) }));
     c.on("data", msg => {
-      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg(`That lobby is full (${MAX_PLAYERS} anglers max).`, true); }
+      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg(`That lobby is full (${msg.max || MAX_PLAYERS} anglers max).`, true); }
       if (msg.type === "pos") {
         const p = state && state.players[msg.seat];
         if (p && msg.seat !== net.seat) Object.assign(p, { x: msg.x, y: msg.y, dir: msg.dir, anim: msg.anim || 0 });
@@ -2766,8 +2779,8 @@ function setConnected(on) {
   net.connected = on;
   const el = document.getElementById("conn"), n = state ? onlineCount() : 1;
   const others = state ? state.players.filter((p, i) => i !== net.seat && online(i)).map(p => p.name) : [];
-  el.textContent = on ? (immersive() ? `🟢 ${n}/${MAX_PLAYERS}` : `🟢 ${n}/${MAX_PLAYERS} · fishing with ${others.join(", ")}`)
-    : net.isHost ? (immersive() ? `1/${MAX_PLAYERS} · share!` : `Waiting for friends (up to ${MAX_PLAYERS})… share the code!`) : "🔴 Disconnected";
+  el.textContent = on ? (immersive() ? `🟢 ${n}/${roomMax()}` : `🟢 ${n}/${roomMax()} · fishing with ${others.join(", ")}`)
+    : net.isHost ? (immersive() ? `1/${roomMax()} · share!` : `Waiting for friends (up to ${roomMax() - 1})… share the code!`) : "🔴 Disconnected";
   el.title = others.length ? "Fishing with " + others.join(", ") : "";
   el.classList.toggle("on", on);
   renderSide();
@@ -2801,7 +2814,7 @@ function renderSide() {
   });
   const seen = FISH.filter(f => state.dex[f.id]).length;
   const party = onlineCount() - 1;
-  document.getElementById("team-stats").innerHTML = `<div style="grid-column:span 2">🎣 <b>${onlineCount()}/${MAX_PLAYERS}</b> anglers online${party ? ` · party bonus <b>+${party * 5}%</b> at the market` : ""}</div><div>💰 <b>${state.team.gold.toLocaleString()}</b> stash</div><div>🐟 <b>${state.team.caught}</b> caught</div>
+  document.getElementById("team-stats").innerHTML = `<div style="grid-column:span 2">🎣 <b>${onlineCount()}/${roomMax()}</b> anglers online${party ? ` · party bonus <b>+${party * 5}%</b> at the market` : ""}</div><div>💰 <b>${state.team.gold.toLocaleString()}</b> stash</div><div>🐟 <b>${state.team.caught}</b> caught</div>
     <div>📖 <b>${seen}/${FISH.length}</b> species</div><div>⭐ <b>${state.team.legends}</b> legends</div>`;
   document.getElementById("milestones").innerHTML = TEAM_GOALS.map(g => { const ok = g.test(state); return `<div class="${ok ? "done" : ""}">${ok ? "✅" : "⬜"} ${g.label}</div>`; }).join("");
   document.getElementById("log").innerHTML = state.log.map(l => `<div class="${l.ok ? "ok" : ""}">${esc(l.text)}</div>`).join("") || `<div style="color:var(--muted)">Nothing yet — go cast a line!</div>`;
@@ -2869,7 +2882,7 @@ function renderMenu() {
   } else if (menuKind === "settings") {
     const p = readJSON(PREFS_KEY) || {}, side = p.actSide === "left" ? "left" : "right", clear = p.joyClear ?? 10;
     title.textContent = "⚙️ Settings";
-    note.innerHTML = `Lobby <b style="color:var(--gold);letter-spacing:2px">${net.code}</b> · ${onlineCount()}/${MAX_PLAYERS} anglers online${onlineCount() > 1 ? ` · party bonus +${(onlineCount() - 1) * 5}%` : ""} · v${BUILD}`;
+    note.innerHTML = `Lobby <b style="color:var(--gold);letter-spacing:2px">${net.code}</b> · ${onlineCount()}/${roomMax()} anglers online${onlineCount() > 1 ? ` · party bonus +${(onlineCount() - 1) * 5}%` : ""} · v${BUILD}`;
     body.innerHTML = `
       <div class="opt-title">Action buttons</div>
       <div class="setrow choices"><button class="style ${side === "left" ? "on" : ""}" data-set-side="left">◀ Bottom left</button><button class="style ${side === "right" ? "on" : ""}" data-set-side="right">Bottom right ▶</button></div>
@@ -2989,12 +3002,13 @@ function renderLobby() {
   const nameEl = document.getElementById("my-name");
   if (!nameEl.value && prefs.name) nameEl.value = prefs.name;
   document.getElementById("me-name-show").textContent = nameEl.value || "Angler";
+  renderSizePick();
   const pet = LOOKS.pet[myLook.pet || 0];
   document.getElementById("me-pet-show").textContent = pet === "None" ? "No pet companion" : `Pet: ${pet} — ${PET_PERKS[pet].replace(/^\S+ /, "")}`;
   const list = readJSON(RECENT_KEY) || [];
   document.getElementById("recent-list").innerHTML = list.length ? list.map(r => {
     const s = readJSON(saveKey(r.code));
-    const info = s && s.team ? `${s.players.map(p => esc(p.name)).join(" & ")} · 🐟 ${s.team.caught} · 💰 ${s.team.gold}` : "No save yet";
+    const info = s && s.team ? `${s.maxPlayers === 2 ? "👥" : "👨‍👩‍👧‍👦"} ${s.players.map(p => esc(p.name)).join(", ")} · 🐟 ${s.team.caught} · 💰 ${s.team.gold}` : "No save yet";
     return `<div class="rroom"><span class="rcode">${r.code}</span><span class="rinfo">${r.role === "host" ? "👑 " : ""}${info}</span>
       <button data-rjoin="${r.code}" data-role="${r.role}">${r.role === "host" ? "Reopen" : "Rejoin"}</button><button class="rdel" data-rdel="${r.code}">✕</button></div>`;
   }).join("") : `<div class="empty">Lobbies you create or join show up here.</div>`;
@@ -3007,6 +3021,11 @@ document.getElementById("recent-list").addEventListener("click", e => {
 });
 document.getElementById("my-name").addEventListener("input", e => { document.getElementById("me-name-show").textContent = e.target.value || "Angler"; });
 document.getElementById("create").onclick = () => { ensureAudio(); hostLobby(); };
+function renderSizePick() { const n = pickedSize(); document.querySelectorAll("#size-pick [data-size]").forEach(b => b.classList.toggle("on", +b.dataset.size === n)); }
+document.getElementById("size-pick").addEventListener("click", e => {
+  const b = e.target.closest("[data-size]"); if (!b) return;
+  writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), lobbySize: +b.dataset.size }); renderSizePick();
+});
 document.getElementById("join").onclick = () => { ensureAudio(); joinLobby(document.getElementById("join-code").value); };
 document.getElementById("join-code").addEventListener("keydown", e => { if (e.key === "Enter") joinLobby(e.target.value); });
 document.getElementById("edit-look").onclick = () => openCreator();

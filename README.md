@@ -25,7 +25,7 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Shops:** walk up to a shop and press Space. **C** opens your cooler, **J** the journal and **Z** changes the zoom.
 
 ## Gameplay
-- **Lobbies for up to 4 anglers:** create a lobby and share the 5-character code. The room grows as friends join, and a fifth person is told it's full.
+- **Lobbies for 2 or 4 anglers:** pick 👥 2 or 👨‍👩‍👧‍👦 4 anglers before you create a lobby, then share the 5-character code. The room grows as friends join, and anyone past the limit is told it's full. Reopening a lobby keeps its size.
   - Each angler gets their own colour: 🔵 host, 🟠, 🟢, 🟣.
   - Leave and rejoin and you get your own seat and progress back.
   - **The game scales with the group:** each extra angler online adds a bubbling hot spot, and fish sell for **+5% per extra angler** (+15% with 4).
