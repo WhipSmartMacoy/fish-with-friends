@@ -36,7 +36,7 @@ A co-op fishing game for two players, each on their own device. It's the sister 
   | 🌊 Ocean | 9 | Mackerel, ◆ Red Snapper, ◆◆◆ Swordfish (deep) | Lanternfish, ◆ Squid, ◆◆ Octopus, ★ Moonfish (deep) | Sardine, ◆◆ Bluefin Tuna (deep) |
 
   You can also reel in junk (boots, cans, seaweed) and treasure chests. The action button tells you which water you're facing.
-- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (10 common, 8 uncommon, 7 rare, 4 epic, 4 legendary).
+- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (12 common, 8 uncommon, 5 rare, 4 epic, 4 legendary).
   - The reel bar shows a fish's rarity as soon as you hook it.
   - Catches, the cooler and the journal are colour-coded by rarity.
   - Better rods, a Shiny Lure, Glow Bait at night and bubbling hot spots all make rarer fish more likely.
