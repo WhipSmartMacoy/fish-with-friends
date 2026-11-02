@@ -7,7 +7,8 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 ## Controls
 **On phones** the game fills the whole screen, with a slim chat bar at the bottom. The top edge is kept clear for the Dynamic Island.
 - **Move:** touch anywhere on the game. A joystick pops up centred under your finger and stays there until you lift it.
-- **Act:** the 🎣 action button and 🧊 cooler sit in the bottom-right corner, or the bottom-left if you switch them in ⚙️ Settings. Your pet, the chat box and Send sit at the same end of the chat bar, with the latest message on the other side. While a fish is biting or you're on the dial, a tap anywhere on the screen counts as well.
+- **Act:** the 🎣 action button and 🧊 cooler sit in the bottom-right corner, or the bottom-left if you switch them in ⚙️ Settings. Your pet, the chat box and Send sit at the same end of the chat bar, with the latest message on the other side.
+- **Map:** tap the minimap (or press M) for a full-screen map. Zoom with the slider, drag to look around, 📍 jumps back to you. The ✕ to close it is top-right, or top-left in the left layout. While a fish is biting or you're on the dial, a tap anywhere on the screen counts as well.
 - **⚙️ Settings:** choose which side the buttons go on, how see-through the joystick is (10% by default), the zoom, and get to invite, stats, the journal and leaving the lobby.
 - **Full screen:** "Add to Home Screen" in Safari opens the game full screen. A home-screen copy keeps its own saves, separate from the copy in Safari.
 

@@ -300,6 +300,19 @@
   html.immersive .fjoy.on { display: block; }
   .fjoy-knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%; transform: translate(-50%, -50%);
                background: linear-gradient(180deg, #ffe890, #f0b840); border: 3px solid #fff4d0; box-shadow: 0 3px 0 #061528; }
+  .minimap { cursor: pointer; }
+  .bigmap { position: fixed; z-index: 40; inset: 0; background: #071526; touch-action: none; }
+  .bigmap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  .bigmap-head { position: absolute; top: calc(var(--sat, 0px) + 10px); left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 16px;
+                 background: rgba(8, 26, 52, .82); border: 1px solid rgba(244, 236, 208, .5); display: flex; gap: 10px; align-items: center; white-space: nowrap; font-size: .9rem; }
+  .bigmap-x { position: absolute; top: calc(var(--sat, 0px) + 8px); right: 10px; width: 46px; height: 46px; border-radius: 50%; padding: 0; font-size: 1.3rem; }
+  html.act-left .bigmap-x { right: auto; left: 10px; }
+  .bigmap-zoom { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sab, 0px) + 40px); width: min(86vw, 420px);
+                 display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 22px; background: rgba(8, 26, 52, .85); border: 1px solid rgba(244, 236, 208, .5); }
+  .bigmap-zoom input { flex: 1; accent-color: #ffd860; height: 28px; }
+  .bigmap-zoom span { font-weight: bold; font-size: 1.1rem; }
+  .bigmap-zoom button { padding: 4px 8px; border-radius: 12px; }
+  .bigmap-key { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sab, 0px) + 10px); font-size: .74rem; color: var(--muted); white-space: nowrap; }
   .setrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .setrow input[type=range] { flex: 1; min-width: 140px; accent-color: #ffd860; }
   /* keep the lobby, creator and stats panel clear of the Dynamic Island and the home bar (full-screen Home Screen mode) */
@@ -411,7 +424,7 @@
         <div class="log" id="log"></div>
       </div>
       <div class="card keys-wrap">
-        <div class="keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> walk · hold <kbd>Space</kbd> to cast, tap to hook, then tap in the green on the dial · <kbd>C</kbd> cooler · <kbd>J</kbd> journal · <kbd>Z</kbd> zoom · <kbd>Esc</kbd> close</div>
+        <div class="keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> walk · hold <kbd>Space</kbd> to cast, tap to hook, then tap in the green on the dial · <kbd>C</kbd> cooler · <kbd>J</kbd> journal · <kbd>M</kbd> map · <kbd>Z</kbd> zoom · <kbd>Esc</kbd> close</div>
       </div>
       <div class="side-foot">
         <span style="color:var(--muted);font-size:.72rem">v<span class="build-tag"></span></span>
@@ -423,6 +436,13 @@
     </aside>
   </div>
 </section>
+<div class="bigmap hidden" id="bigmap" role="dialog" aria-modal="true" aria-label="Map">
+  <canvas id="bigmap-canvas"></canvas>
+  <div class="bigmap-head"><b>🗺️ Map</b><span id="bigmap-time"></span></div>
+  <button class="bigmap-x" id="bigmap-x" aria-label="Close map">✕</button>
+  <div class="bigmap-zoom"><span>－</span><input type="range" id="bigmap-zoom" min="1" max="6" step="0.1" value="2"><span>＋</span><button id="bigmap-me" title="Centre on me">📍</button></div>
+  <div class="bigmap-key">🔵 you · 🟠 friend · ⚪ bubbling spot · drag to look around</div>
+</div>
 <div class="fjoy" id="fjoy" aria-hidden="true"><div class="fjoy-knob" id="fjoy-knob"></div></div>
 <input type="file" id="import-file" accept=".json,application/json" class="hidden">
 
@@ -846,7 +866,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1545";
+const BUILD = "2026.11.02-1600";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -2184,6 +2204,7 @@ function draw(now) {
   drawOverlay(now);
   drawMinimap(now);
   drawPetDock(now);
+  drawBigMap(now);
 }
 
 function drawOverlay(now) {
@@ -2293,6 +2314,82 @@ function drawReel(now, sw, sh) {
   }
 }
 
+// ================= Full-screen map: tap the minimap. Zoom slider, drag to pan, ✕ follows the left/right layout =================
+const BM = { open: false, k: 2, cx: 0, cy: 0, drag: null, base: null };
+const bmEl = document.getElementById("bigmap"), bmCan = document.getElementById("bigmap-canvas"), bmCtx = bmCan.getContext("2d"), bmZoom = document.getElementById("bigmap-zoom");
+function bigBase() {           // the whole world at 8 px per tile, drawn once
+  if (BM.base) return BM.base;
+  const P = 8, c = mkCanvas(MW * P, MH * P), g = c.getContext("2d");
+  const cols = { [T.GRASS]: "#5aa84a", [T.FLOWER]: "#62b04e", [T.SAND]: "#e4cf94", [T.PATH]: "#b8704a", [T.DOCK]: "#b07a44", [T.BRIDGE]: "#b07a44", [T.TREE]: "#2e6a34", [T.BUILD]: "#c8b48e", [T.ROCK]: "#8a8a94" };
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    const t = tileAt(x, y);
+    if (isWater(t)) { const cs = WATER_COL[t], d = depthAt(x, y) || 1; g.fillStyle = cs[Math.min(d - 1, cs.length - 1)]; }
+    else g.fillStyle = cols[t] || "#000";
+    g.fillRect(x * P, y * P, P, P);
+    if (t === T.TREE) { g.fillStyle = hash2(x, y, 15) < .5 ? "#3f8a3a" : "#24603a"; g.beginPath(); g.arc(x * P + 4, y * P + 4, 3.2, 0, 7); g.fill(); }
+  }
+  for (const b of BUILDINGS) { g.fillStyle = b.roof; g.fillRect(b.x * P, b.y * P, b.w * P, b.h * P); g.strokeStyle = "#2a1814"; g.lineWidth = 2; g.strokeRect(b.x * P + 1, b.y * P + 1, b.w * P - 2, b.h * P - 2); }
+  return (BM.base = c);
+}
+function openBigMap() {
+  if (!state) return;
+  const me = disp[net.seat] || state.players[net.seat];
+  BM.cx = me.x; BM.cy = me.y; BM.open = true;
+  BM.k = +(readJSON(PREFS_KEY) || {}).mapZoom || 2; bmZoom.value = BM.k;
+  bmEl.classList.remove("hidden"); keys.clear();
+  joy.id = null; joy.x = joy.y = 0; document.getElementById("fjoy").classList.remove("on");
+}
+function closeBigMap() { BM.open = false; bmEl.classList.add("hidden"); }
+function bigMapScale() { const w = bmCan.clientWidth, h = bmCan.clientHeight; return Math.min(w / MW, h / MH) * .94 * BM.k; }   // css px per tile
+function drawBigMap(now) {
+  if (!BM.open) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = bmCan.clientWidth, h = bmCan.clientHeight;
+  if (bmCan.width !== Math.round(w * dpr) || bmCan.height !== Math.round(h * dpr)) { bmCan.width = Math.round(w * dpr); bmCan.height = Math.round(h * dpr); }
+  const s = bigMapScale(), half = [w / 2 / s, h / 2 / s];
+  // keep the view on the map
+  BM.cx = MW <= half[0] * 2 ? MW / 2 : clamp(BM.cx, half[0], MW - half[0]);
+  BM.cy = MH <= half[1] * 2 ? MH / 2 : clamp(BM.cy, half[1], MH - half[1]);
+  const g = bmCtx, tx = x => (x - BM.cx) * s + w / 2, ty = y => (y - BM.cy) * s + h / 2;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#071526"; g.fillRect(0, 0, w, h);
+  g.imageSmoothingEnabled = s < 8;
+  g.drawImage(bigBase(), tx(0), ty(0), MW * s, MH * s);
+  g.strokeStyle = "rgba(244,236,208,.6)"; g.lineWidth = 2; g.strokeRect(tx(0), ty(0), MW * s, MH * s);
+  const lab = (text, x, y, col, size, bold = true) => {
+    g.font = `${bold ? "bold " : ""}${size}px "Trebuchet MS", system-ui`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.lineWidth = Math.max(3, size / 3.5); g.strokeStyle = "rgba(8,26,52,.9)"; g.strokeText(text, x, y); g.fillStyle = col; g.fillText(text, x, y);
+  };
+  // place names
+  const fs = clamp(s * 1.6, 11, 22);
+  [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]].forEach(([n, x, y]) => lab(n, tx(x), ty(y), "#e8f6ff", fs));
+  for (const b of BUILDINGS) lab(s < 18 ? b.sign : `${b.sign} ${b.name}`, tx(b.x + b.w / 2), ty(b.y - .8), "#ffe8a0", s < 18 ? clamp(s * 1.6, 13, 20) : clamp(s * 1.1, 10, 16));   // icons only until there's room for names
+  // bubbling spots
+  for (const hs of hotSpots(hostNow())) {
+    const r = (now / 900) % 1, X = tx(hs.x + .5), Y = ty(hs.y + .5);
+    g.strokeStyle = `rgba(255,255,255,${1 - r})`; g.lineWidth = 2; g.beginPath(); g.arc(X, Y, 4 + r * 10, 0, 7); g.stroke();
+    g.fillStyle = "#ffffff"; g.beginPath(); g.arc(X, Y, 3, 0, 7); g.fill();
+  }
+  // players (you on top)
+  const order = net.connected ? [1 - net.seat, net.seat] : [net.seat];
+  for (const i of order) {
+    const d = disp[i] || state.players[i], X = tx(d.x), Y = ty(d.y), col = i ? "#ffb08a" : "#8fd0ff", me = i === net.seat;
+    if (me) { const p = (now / 1100) % 1; g.strokeStyle = `rgba(143,208,255,${.8 * (1 - p)})`; g.lineWidth = 3; g.beginPath(); g.arc(X, Y, 8 + p * 16, 0, 7); g.stroke(); }
+    g.fillStyle = "#08203a"; g.beginPath(); g.arc(X, Y, 8, 0, 7); g.fill();
+    g.fillStyle = col; g.beginPath(); g.arc(X, Y, 6, 0, 7); g.fill();
+    lab(state.players[i].name + (me ? " (you)" : ""), X, Y - 17, col, 13);
+  }
+  document.getElementById("bigmap-time").textContent = clockText(hostNow()) + " " + periodOf(hostNow());
+}
+document.getElementById("minimap").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); openBigMap(); });
+document.getElementById("bigmap-x").onclick = closeBigMap;
+document.getElementById("bigmap-me").onclick = () => { const me = disp[net.seat] || state.players[net.seat]; BM.cx = me.x; BM.cy = me.y; };
+bmZoom.addEventListener("input", () => { BM.k = +bmZoom.value; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), mapZoom: BM.k }); });
+bmCan.addEventListener("pointerdown", e => { BM.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, cx: BM.cx, cy: BM.cy }; try { bmCan.setPointerCapture(e.pointerId); } catch {} });
+bmCan.addEventListener("pointermove", e => { const d = BM.drag; if (!d || d.id !== e.pointerId) return; const s = bigMapScale(); BM.cx = d.cx - (e.clientX - d.x) / s; BM.cy = d.cy - (e.clientY - d.y) / s; });
+const bmEnd = e => { if (BM.drag && BM.drag.id === e.pointerId) BM.drag = null; };
+bmCan.addEventListener("pointerup", bmEnd); bmCan.addEventListener("pointercancel", bmEnd);
+bmCan.addEventListener("wheel", e => { e.preventDefault(); BM.k = clamp(BM.k * (e.deltaY < 0 ? 1.12 : 1 / 1.12), 1, 6); bmZoom.value = BM.k; }, { passive: false });
+
 // ================= Minimap (top-down, like Mine with friends) =================
 const mm = document.getElementById("minimap"), mmx = mm.getContext("2d");
 let mmBase = null;
@@ -2343,7 +2440,7 @@ function tickLocal(dt, now) {
   if (keys.has("left")) vx--; if (keys.has("right")) vx++; if (keys.has("up")) vy--; if (keys.has("down")) vy++;
   if (joy.id !== null) { vx += joy.x; vy += joy.y; }
   const len = Math.hypot(vx, vy);
-  const busy = fishing.phase === "charge" || fishing.phase === "reel" || !document.getElementById("menu").classList.contains("hidden");
+  const busy = fishing.phase === "charge" || fishing.phase === "reel" || BM.open || !document.getElementById("menu").classList.contains("hidden");
   moveVec.len = busy || len < .18 ? 0 : Math.min(1, len);
   if (moveVec.len) {
     let sx = vx / len, sy = vy / len;
@@ -2513,7 +2610,8 @@ addEventListener("keydown", e => {
   if (typing) { if (e.key === "Escape") document.activeElement.blur(); return; }
   if (KEYMAP[e.code]) { keys.add(KEYMAP[e.code]); e.preventDefault(); return; }
   if (e.code === "Space" || e.code === "KeyE") { e.preventDefault(); if (!e.repeat) actDown(); return; }
-  if (e.key === "Escape") return closeMenu();
+  if (e.key === "Escape") return BM.open ? closeBigMap() : closeMenu();
+  if (e.code === "KeyM") return BM.open ? closeBigMap() : openBigMap();
   if (e.code === "KeyC" || e.code === "KeyB" || e.code === "KeyI") return toggleMenu("cooler");
   if (e.code === "KeyJ") return toggleMenu("journal");
   if (e.code === "KeyZ") return cycleZoom();
@@ -2775,6 +2873,7 @@ function show(id) {
 }
 function showLobby() { show("lobby"); renderLobby(); }
 function enterGame() {
+  closeBigMap();
   lastNight = null;
   show("game-screen");
   document.getElementById("code-show").textContent = net.code;
