@@ -866,7 +866,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1600";
+const BUILD = "2026.11.02-1615";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -887,6 +887,8 @@ function applyFit() {
 }
 function applyControlPrefs() {
   const p = readJSON(PREFS_KEY) || {};
+  const ci = document.getElementById("chat-input");
+  if (ci) ci.placeholder = document.documentElement.classList.contains("immersive") ? (innerWidth < 400 ? "Chat…" : "Chat with your buddy…") : "Say something to your fishing buddy…";
   // phones: the pet rides on the chat bar; elsewhere it stays with the action buttons
   const pd = document.getElementById("pet-dock"), chat = document.getElementById("chat"), cl = document.getElementById("act-cluster");
   if (pd && chat && cl) {
