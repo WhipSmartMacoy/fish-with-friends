@@ -85,6 +85,32 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
   - Gold rods and up glint in your hands.
 - **Fish journal:** tracks every species and the record weight for each one, with team milestones.
 
+## World 2: Cloud Island and the Sky Island
+- **Unlocking it:** once your team has caught every non-legendary fish in World 1 (29 species), the ⛴️ **Cloud Ferry** at the end of the ocean pier starts running. The journal shows your progress.
+- **Cloud Island** is a small floating home base:
+  - The 🏠 Cloud Cottage has the journal.
+  - The 🏪 **Sky Outpost** is every shop in one: sell fish, buy tackle, and read the journal.
+  - The ⛴️ ferry takes you back to World 1, and the ⛵ **Sky Boat** sails up to the Sky Island.
+- **The Sky Island** is a procedurally generated climb, and **the whole party sails together**.
+  - Each floor is a hub with doors to 2–5 rooms. One room has a 🌊 **sky pool**. Others hold 🎁 chests (gold, Shiny Lures, sometimes an Hourglass) or are 🌳 groves.
+  - Doors show what's behind them once someone has looked.
+  - **To clear a floor,** catch the floor's goal number of fish in the pool, or the floor's ⭐ **special fish**. Clearing it opens the stairs in the middle of the hub, and walking onto them takes everyone up a floor.
+  - **Difficulty scales** with the floor and the party's average fishing level:
+    - more fish needed to clear a floor (3 to 10);
+    - faster, harder dials with more pips to fill;
+    - rarer fish biting;
+    - special fish move from Rare to Epic (floor 4+) to Legendary (floor 8+).
+  - Sky fish sell for more the higher you climb.
+  - **Leaving:** use the ⛵ boat in the hub to sail home. Your fish and gold come with you, but the climb resets to floor 1. The team's best floor is recorded.
+- **13 new sky fish**, from the Cloudlet and Puffwing up to the Comet Koi, the Celestial Carp and the Sky Whale. They have their own ☁️ Sky tab in the journal.
+
+## Debug lobby (for playtesting)
+Type **EEEEE** in the join box and press Join. It opens the debug lobby, or joins it if a friend already has it open. Everyone in that lobby gets a 🛠️ **Debug** menu (also in ⚙️ Settings) to:
+- **Fish and gold:** give gold, add any fish or junk to your cooler, and fill or clear the journal.
+- **Gear and items:** set any rod or fishing level, add bait, Hourglass Charms and the biggest cooler, and unlock Cloud Island.
+- **Travel:** go to World 1, Cloud Island, any Sky Island floor or straight to the pool room. You can also clear the floor or catch its special fish.
+- **Time:** switch between day, night and the real clock.
+
 ## UI and scaling (carried over from Mine with friends)
 - Phone-fit profiles for the iPhone Air and iPhone 15 Pro, plus a short-screen mode for when Safari's toolbars are showing.
 - Portrait phones get a square game view with the joystick, pet dock and action button below it. Phones held sideways get a joystick | game | button layout.

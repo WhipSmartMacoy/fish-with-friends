@@ -382,6 +382,7 @@
     <button id="invite">🔗 Invite</button>
     <button id="zoom-btn" title="Zoom">🗺️</button>
     <button id="panel-btn">📊</button>
+    <button id="debug-btn" class="hidden" title="Debug">🛠️</button>
     <button id="settings-btn" title="Settings">⚙️</button>
     <button id="leave">🚪</button>
   </div>
@@ -390,6 +391,7 @@
     <div class="hud-chip" title="Fishing level">🎣 Lv <b id="hud-lvl">1</b><div class="xpbar"><i id="hud-xp"></i></div></div>
     <div class="hud-chip" id="hud-time">🕕 6:00</div>
     <div class="hud-chip" id="hud-bait" title="Bait on your hook"></div>
+    <div class="hud-chip hidden" id="hud-sky"></div>
     <button id="bag-btn" class="bag-btn" title="Cooler (C)"><span>🧊</span><em id="hud-cooler" style="font-style:normal">0/10</em></button>
   </div>
   <div class="playarea">
@@ -875,7 +877,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1715";
+const BUILD = "2026.11.02-1800";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -961,23 +963,28 @@ const DIRS = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 // ================= The world =================
 // One big hand-shaped map (75 × 75 tiles), generated the same way on both devices so only players travel the wire.
 const TS = 48;                 // world units per tile (the character art is 48 × 60 units)
-const MW = 75, MH = 75, CH = 15;
-const T = { GRASS: 0, SAND: 1, PATH: 2, DOCK: 3, BRIDGE: 4, TREE: 5, BUILD: 6, FLOWER: 7, ROCK: 8, POND: 10, RIVER: 11, LAKE: 12, OCEAN: 13 };
-const WATER_NAMES = { 10: "Pond", 11: "River", 12: "Lake", 13: "Ocean" };
-const WATER_LABEL = { pond: "Pond", river: "River", lake: "Lake", sea: "Ocean" };
-const WATER_KEYS = { 10: "pond", 11: "river", 12: "lake", 13: "sea" };
-const tiles = new Uint8Array(MW * MH);
-const under = new Uint8Array(MW * MH);   // water beneath docks and bridges
-const depth = new Uint8Array(MW * MH);   // tiles to the nearest shore
-const buildAt = new Int8Array(MW * MH).fill(-1);
+// Several maps share one engine: World 1, Cloud Island and the rooms of the Sky Island. The "current map" globals below
+// are swapped with useMap(); the host switches to a player's map while it checks that player's actions (withMap).
+const CH = 15;
+let MW = 75, MH = 75;
+const T = { GRASS: 0, SAND: 1, PATH: 2, DOCK: 3, BRIDGE: 4, TREE: 5, BUILD: 6, FLOWER: 7, ROCK: 8, POND: 10, RIVER: 11, LAKE: 12, OCEAN: 13, SKYW: 14,
+            VOID: 20, CLOUD: 21, PORTAL: 22, STAIRS: 23 };
+const WATER_NAMES = { 10: "Pond", 11: "River", 12: "Lake", 13: "Ocean", 14: "Sky Pool" };
+const WATER_LABEL = { pond: "Pond", river: "River", lake: "Lake", sea: "Ocean", sky: "Sky Island" };
+const WATER_KEYS = { 10: "pond", 11: "river", 12: "lake", 13: "sea", 14: "sky" };
+let tiles = new Uint8Array(MW * MH);
+let under = new Uint8Array(MW * MH);   // water beneath docks, bridges and boats
+let depth = new Uint8Array(MW * MH);   // tiles to the nearest shore
+let buildAt = new Int8Array(MW * MH).fill(-1);
+let CUR = null, mapKey = "w1";
 const idx = (x, y) => y * MW + x;
 const inMap = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH;
-const tileAt = (x, y) => inMap(x, y) ? tiles[idx(x, y)] : T.TREE;
-const isWater = t => t >= 10;
+const tileAt = (x, y) => inMap(x, y) ? tiles[idx(x, y)] : (CUR ? CUR.oob : T.TREE);
+const isWater = t => t >= 10 && t < 20;
 const waterAt = (x, y) => isWater(tileAt(x, y));
-const walkTile = t => t === T.GRASS || t === T.SAND || t === T.PATH || t === T.DOCK || t === T.BRIDGE || t === T.FLOWER;
+const walkTile = t => t === T.GRASS || t === T.SAND || t === T.PATH || t === T.DOCK || t === T.BRIDGE || t === T.FLOWER || t === T.CLOUD || t === T.PORTAL || t === T.STAIRS;
 
-const BUILDINGS = [
+let BUILDINGS = [
   { id: "home",   name: "Home",  x: 7,  y: 26, w: 4, h: 3, sign: "🏠", act: "📖<br>Journal", roof: "#c24a3a" },
   { id: "tackle", name: "Tackle Shop",   x: 13, y: 26, w: 4, h: 3, sign: "🎣", act: "🛒<br>Shop",    roof: "#3a6ac2" },
   { id: "market", name: "Fish Market",   x: 19, y: 26, w: 4, h: 3, sign: "🐟", act: "💰<br>Sell",    roof: "#3aa27a", stall: true },
@@ -1053,7 +1060,10 @@ function genWorld() {
   let py = 37; while (!waterAt(13, py) && py < 45) py++;
   dock(13, py, 0, 1, 2);
   // buildings
-  BUILDINGS.forEach((b, bi) => { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { set(x, y, T.BUILD); buildAt[idx(x, y)] = bi; } });
+  // the ferry to Cloud Island waits at the end of the ocean pier (opens once you've caught every non-legendary fish)
+  BUILDINGS.push({ id: "ferry", name: "Cloud Ferry", x: sx + 4, y: 31, w: 2, h: 1, sign: "⛴️", act: "⛴️<br>Ferry", kind: "boat", anyside: true, action: "ferry", roof: "#e8f0ff" });
+  W1_PIER = { x: sx + 4.5, y: 30.5 };
+  BUILDINGS.forEach((b, bi) => { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { if (isWater(tileAt(x, y))) under[idx(x, y)] = tileAt(x, y); set(x, y, T.BUILD); buildAt[idx(x, y)] = bi; } });
   for (let x = 6; x <= 23; x++) if (tileAt(x, 29) === T.GRASS) set(x, 29, T.PATH);   // a walk in front of the shops
   // trees: thick woods to the north and south, scattered elsewhere; never on a shore, so every bank is fishable
   const nearWater = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (waterAt(x + dx, y + dy) || [T.DOCK, T.BRIDGE].includes(tileAt(x + dx, y + dy))) return true; return false; };
@@ -1070,6 +1080,10 @@ function genWorld() {
     else if (hash2(x, y, 13) < .012) set(x, y, T.ROCK);
     else if (hash2(x, y, 14) < .05) set(x, y, T.FLOWER);
   }
+  computeDepth();
+}
+let W1_PIER = { x: 60, y: 30.5 };
+function computeDepth() {
   // water depth: distance (in tiles) to the nearest bank
   const q = [];
   for (let i = 0; i < tiles.length; i++) { if (isWater(tiles[i])) depth[i] = 255; else { depth[i] = 0; q.push(i); } }
@@ -1084,12 +1098,324 @@ function genWorld() {
   for (let i = 0; i < tiles.length; i++) if (depth[i] === 255) depth[i] = 9;
 }
 genWorld();
+const MAPS = new Map();
+MAPS.set("w1", CUR = { key: "w1", name: "World 1", kind: "w1", W: MW, H: MH, tiles, under, depth, buildAt, buildings: BUILDINGS, oob: T.TREE, portals: [] });
+function useMap(m) { CUR = m; mapKey = m.key; MW = m.W; MH = m.H; tiles = m.tiles; under = m.under; depth = m.depth; buildAt = m.buildAt; BUILDINGS = m.buildings; }
+function withMap(key, fn) { const prev = CUR; useMap(getMap(key)); try { return fn(); } finally { useMap(prev); } }
+
+// ================= World 2: Cloud Island and the Sky Island =================
+const CLOUD_SPAWN = { x: 11.5, y: 8.5 }, CLOUD_DOCK = { x: 18.5, y: 8.5 }, CLOUD_FERRY = { x: 3.5, y: 8.5 };
+const SKY_SIZE = 13, SKY_C = 6.5;
+const SKY_SLOTS = [{ x: 6, y: 1 }, { x: 11, y: 6 }, { x: 1, y: 6 }, { x: 10, y: 2 }, { x: 2, y: 2 }];   // hub doors: N, E, W, NE, NW
+const SKY_BACK = { x: 6, y: 11 };                                                                     // side rooms: the door home (south)
+const mulberry = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+function newMap(key, name, kind, W, H, oob) {
+  const m = { key, name, kind, W, H, oob, tiles: new Uint8Array(W * H).fill(oob), under: new Uint8Array(W * H), depth: new Uint8Array(W * H),
+              buildAt: new Int8Array(W * H).fill(-1), buildings: [], portals: [] };
+  useMap(m); return m;
+}
+const setT = (x, y, t) => { if (inMap(x, y)) tiles[idx(x, y)] = t; };
+function placeBuildings(m) {
+  m.voidB = new Set();
+  for (let i = 0; i < tiles.length; i++) if (tiles[i] === T.DOCK) m.voidB.add(i);   // docks out over the open sky
+  m.buildings.forEach((b, bi) => { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { if (!inMap(x, y)) continue; if (tileAt(x, y) === T.VOID) m.voidB.add(idx(x, y)); if (isWater(tileAt(x, y))) under[idx(x, y)] = tileAt(x, y); setT(x, y, T.BUILD); buildAt[idx(x, y)] = bi; } });
+}
+function cloudRim() {   // ground tiles at the edge of a floating island become fluffy cloud
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    const t = tileAt(x, y); if (t !== T.GRASS && t !== T.FLOWER) continue;
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tileAt(x + dx, y + dy) === T.VOID)) setT(x, y, T.CLOUD);
+  }
+}
+function buildCloud() {
+  const m = newMap("cloud", "Cloud Island", "sky", 23, 17, T.VOID), cx = 11.5, cy = 8.5;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    const dx = (x + .5 - cx) / 9.3, dy = (y + .5 - cy) / 7, n = vnoise(x * .4, y * .4, 77) * .25;
+    if (dx * dx + dy * dy < 1 + n - .1) setT(x, y, hash2(x, y, 5) < .06 ? T.FLOWER : T.GRASS);
+  }
+  for (let x = 2; x <= 19; x++) setT(x, 8, T.PATH);
+  for (let y = 6; y <= 8; y++) { setT(7, y, T.PATH); setT(14, y, T.PATH); }
+  m.buildings.push(
+    { id: "home",    name: "Cloud Cottage", x: 5,  y: 3, w: 4, h: 3, sign: "🏠", act: "📖<br>Journal", roof: "#b86ad8" },
+    { id: "outpost", name: "Sky Outpost",   x: 12, y: 3, w: 4, h: 3, sign: "🏪", act: "🏪<br>Outpost", roof: "#5aa0e8", stall: true, action: "outpost" },
+    { id: "skyboat", name: "Sky Boat",      x: 21, y: 8, w: 2, h: 1, sign: "⛵", act: "⛵<br>Sail", kind: "boat", air: true, anyside: true, action: "sail", roof: "#ffffff" },
+    { id: "ferry",   name: "Ferry Home",    x: 0,  y: 8, w: 2, h: 1, sign: "⛴️", act: "⛴️<br>World 1", kind: "boat", anyside: true, action: "ferry", roof: "#e8f0ff" });
+  for (const x of [1, 2, 20]) setT(x, 8, T.DOCK);
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    if (tileAt(x, y) !== T.GRASS || y === 8 || (y >= 2 && y <= 7 && x >= 4 && x <= 16)) continue;
+    if (hash2(x, y, 31) < .1) setT(x, y, T.TREE);
+  }
+  placeBuildings(m); cloudRim(); computeDepth();
+  return m;
+}
+function floorDef(seed, floor) {
+  const r = mulberry(seed * 977 + floor * 131);
+  const n = clamp(2 + Math.floor(r() * 2) + Math.floor(floor / 3), 2, 5);
+  const water = 1 + Math.floor(r() * n), kinds = [];
+  for (let i = 1; i <= n; i++) kinds[i] = i === water ? "pool" : r() < .6 ? "chest" : "grove";
+  return { n, water, kinds, rng: r };
+}
+const skyKey = (seed, floor, room) => `sky:${seed}:${floor}:${room}`;
+function skyIsland(m, r, keep) {
+  for (let y = 0; y < SKY_SIZE; y++) for (let x = 0; x < SKY_SIZE; x++) {
+    const d = Math.hypot(x + .5 - SKY_C, y + .5 - SKY_C), n = vnoise(x * .45 + r * 7, y * .45, 91) * 1.4;
+    if (d < 4.6 + n || keep(x, y)) setT(x, y, T.GRASS);
+  }
+}
+function buildSkyRoom(seed, floor, room) {
+  const def = floorDef(seed, floor), key = skyKey(seed, floor, room), rs = hash2(seed, floor, room);
+  const m = newMap(key, room === 0 ? `Sky Island · floor ${floor}` : `Sky Island · floor ${floor}`, "sky", SKY_SIZE, SKY_SIZE, T.VOID);
+  m.floor = floor; m.room = room;
+  const path = (x0, y0, x1, y1) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let k = 0; k <= n; k++) setT(Math.round(x0 + (x1 - x0) * k / n), Math.round(y0 + (y1 - y0) * k / n), T.PATH); };
+  const onLine = (x, y, sx, sy) => { const n = Math.max(Math.abs(sx - 6), Math.abs(sy - 6)) || 1; for (let k = 0; k <= n; k++) if (Math.round(6 + (sx - 6) * k / n) === x && Math.round(6 + (sy - 6) * k / n) === y) return true; return false; };
+  if (room === 0) {
+    const doors = SKY_SLOTS.slice(0, def.n);
+    skyIsland(m, rs, (x, y) => doors.some(s => onLine(x, y, s.x, s.y)) || onLine(x, y, 6, 11) || onLine(x, y, 6, 12));
+    for (const s of doors) path(6, 6, s.x, s.y);
+    path(6, 6, 6, 11);
+    doors.forEach((s, i) => {
+      setT(s.x, s.y, T.PORTAL);
+      const ax = s.x + .5 + Math.sign(6 - s.x), ay = s.y + .5 + Math.sign(6 - s.y);
+      m.portals.push({ x: s.x, y: s.y, room: i + 1, to: skyKey(seed, floor, i + 1), ax, ay });
+    });
+    setT(6, 6, T.STAIRS);
+    m.buildings.push({ id: "skyback", name: "Back to Cloud Island", x: 6, y: 12, w: 1, h: 1, sign: "⛵", act: "⛵<br>Leave", kind: "boat", air: true, anyside: true, action: "leave", roof: "#ffffff" });
+    m.arrive = (i) => ({ x: 6.5 + [0, 1, -1, 0][i % 4], y: 8.5 + [0, 0, 0, 1][i % 4] });
+  } else {
+    const kind = def.kinds[room];
+    skyIsland(m, rs, (x, y) => onLine(x, y, 6, 11));
+    path(6, 7, 6, 11);
+    setT(SKY_BACK.x, SKY_BACK.y, T.PORTAL);
+    const slot = SKY_SLOTS[room - 1];
+    m.portals.push({ x: SKY_BACK.x, y: SKY_BACK.y, room: 0, to: skyKey(seed, floor, 0), ax: slot.x + .5 + Math.sign(6 - slot.x), ay: slot.y + .5 + Math.sign(6 - slot.y) });
+    m.kindLabel = kind;
+    if (kind === "pool") {
+      for (let y = 0; y < SKY_SIZE; y++) for (let x = 0; x < SKY_SIZE; x++) {
+        const d = Math.hypot((x + .5 - 6.5) / 1.15, y + .5 - 5.2) + (vnoise(x * .6, y * .6, 44) - .5) * 1.2;
+        if (d < 3 && tileAt(x, y) !== T.VOID) setT(x, y, T.SKYW);
+      }
+    }
+    if (kind === "chest") m.buildings.push({ id: "skychest", name: "Sky Chest", x: 6, y: 5, w: 1, h: 1, sign: "🎁", act: "🎁<br>Open", kind: "chest", anyside: true, action: "chest", roof: "#c8945a" });
+    const trees = kind === "grove" ? .3 : .1;
+    for (let y = 0; y < SKY_SIZE; y++) for (let x = 0; x < SKY_SIZE; x++) {
+      if (tileAt(x, y) !== T.GRASS || Math.abs(x - 6) <= 1 && y >= 3) continue;
+      const h = hash2(x + seed, y + floor * 13, room);
+      if (h < trees) setT(x, y, T.TREE); else if (h < trees + .08) setT(x, y, T.FLOWER); else if (h < trees + .1) setT(x, y, T.ROCK);
+    }
+    m.arrive = (i) => ({ x: 6.5 + [0, 1, -1, 0][i % 4] * .9, y: 10.2 - [0, 0, 0, .9][i % 4] });
+  }
+  placeBuildings(m); cloudRim(); computeDepth();
+  return m;
+}
+function getMap(key) {
+  if (MAPS.has(key)) return MAPS.get(key);
+  const prev = CUR;
+  let m;
+  if (key === "cloud") m = buildCloud();
+  else if (key.startsWith("sky:")) { const [, seed, floor, room] = key.split(":").map(Number); m = buildSkyRoom(seed, floor, room); }
+  else m = MAPS.get("w1");
+  if (prev) useMap(prev);
+  MAPS.set(key, m);
+  const sky = [...MAPS.keys()].filter(k => k.startsWith("sky:"));
+  if (sky.length > 14) MAPS.delete(sky[0]);
+  return m;
+}
+function validMap(key, st = state) {
+  if (!key || key === "w1") return true;
+  if (key === "cloud") return cloudUnlocked(st);
+  if (key.startsWith("sky:")) { const sk = st && st.sky; return !!sk && key.startsWith(`sky:${sk.seed}:${sk.floor}:`); }
+  return false;
+}
+const skyCleared = () => !!(state && state.sky && state.sky.cleared);
+const inSky = p => (p.map || "").startsWith("sky:");
+const partyLevel = () => { const on = state.players.filter((p, i) => online(i)); return on.reduce((a, p) => a + levelOf(p.xp), 0) / Math.max(1, on.length); };
+
+// ---- Each floor: catch `goal` fish in the pool room — or the floor's special fish — and the stairs in the hub open.
+// Difficulty climbs with the floor and the party's average fishing level.
+function setupFloor(floor) {
+  const sk = state.sky, lvl = partyLevel(), r = mulberry(sk.seed * 31 + floor * 7);
+  sk.floor = floor; sk.got = 0; sk.cleared = false; sk.chests = {}; sk.visited = { 0: true };
+  sk.goal = Math.min(10, 3 + Math.floor((floor - 1) * .6) + (lvl >= 8 ? 1 : 0));
+  const tier = floor >= 8 ? 4 : floor >= 4 ? 3 : 2, pool = SKY_FISH.filter(f => f.rar === tier);
+  sk.special = pool[Math.floor(r() * pool.length)].id;
+  sk.tier = +(floor + lvl * .5).toFixed(1);
+  sk.boost = +Math.min(4, (floor - 1) * .35 + lvl * .1).toFixed(2);
+  state.skyBest = Math.max(state.skyBest || 0, floor);
+}
+function rollSky(p, now) {
+  const sk = state.sky, rod = RODS[p.rod], bait = p.useBait && p.bait[p.useBait] > 0 ? p.useBait : null, tier = sk ? sk.tier : 1;
+  const rare = 1 + rod.power * .15 + (bait === "lure" ? 1 : 0) + (bait === "glow" ? .6 : 0);
+  const pool = SKY_FISH.map(f => ({ f, w: RAR_WEIGHT[f.rar] * (1 + tier * .12 * f.rar) * (f.rar >= 2 ? rare : 1) * (sk && f.id === sk.special ? 3 : 1) }));
+  pool.push({ f: CATCH.feather, w: 4 * Math.max(.3, 1 - rod.power * .15) }, { f: CATCH.chest, w: .8 });
+  let roll = Math.random() * pool.reduce((a, o) => a + o.w, 0), pick = pool[0].f;
+  for (const o of pool) { roll -= o.w; if (roll <= 0) { pick = o.f; break; } }
+  const look = cleanLook(p.look);
+  let t = Math.pow(Math.random(), 1.4 - Math.min(.5, tier * .03));
+  if (LOOKS.pet[look.pet] === "Cat") t = Math.min(1, t * 1.08 + .04);
+  const kg = +(pick.kg[0] + (pick.kg[1] - pick.kg[0]) * t).toFixed(2);
+  let wait = (2000 + Math.random() * 4500) * (1 - rod.power * .06) * (bait === "worms" ? .6 : 1);
+  const win = Math.max(600, 1250 - ((pick.d || 1) + (sk ? sk.boost : 0)) * 45) + (LOOKS.pet[look.pet] === "Dog" ? 450 : 0);
+  return { fish: pick.id, kg, biteAt: now + Math.round(wait), win, bait, floor: sk ? sk.floor : 1, dBoost: sk ? sk.boost : 0 };
+}
+function skyProgress(f) {
+  const sk = state.sky; if (!sk || sk.cleared) return "";
+  sk.got++;
+  if (f.id === sk.special || sk.got >= sk.goal) {
+    sk.cleared = true;
+    return `☁️ Floor ${sk.floor} cleared${f.id === sk.special ? ` by the ⭐ ${f.name}` : ""}! The stairs in the hub are open.`;
+  }
+  return `(${sk.got}/${sk.goal} for floor ${sk.floor})`;
+}
+function nearBuilding(p, action, dist = 2.6) {
+  return BUILDINGS.find(b => b.action === action && Math.hypot(clamp(p.x, b.x, b.x + b.w) - p.x, clamp(p.y, b.y, b.y + b.h) - p.y) < dist);
+}
+function moveTo(p, key, x, y, dir = "down") { p.map = key; p.x = x; p.y = y; p.dir = dir; p.line = null; p.tp = (p.tp || 0) + 1; }
+function sendPartyToHub() {
+  const hub = getMap(skyKey(state.sky.seed, state.sky.floor, 0));
+  let k = 0;
+  state.players.forEach((q, i) => { if (online(i) && (inSky(q) || q.map === "cloud" || state.sky.floor === 1 && k === 0)) { const a = hub.arrive(k++); moveTo(q, hub.key, a.x, a.y, "up"); } });
+}
+function travelAction(seat, a, now) {
+  const p = state.players[seat];
+  const near = (action) => nearBuilding(p, action) || (a.x != null && nearBuilding({ x: a.x, y: a.y }, action));
+  if (a.type === "ferry") {
+    if (!near("ferry")) return null;
+    if (p.map === "w1") {
+      if (!cloudUnlocked(state)) {
+        const have = W1_REQUIRED.filter(f => state.dex[f.id]).length;
+        return { text: `⛴️ The ferry leaves for Cloud Island once your team has caught every non-legendary fish (${have}/${W1_REQUIRED.length}).`, ok: false, seat, private: true };
+      }
+      moveTo(p, "cloud", CLOUD_FERRY.x, CLOUD_FERRY.y, "right");
+      const text = `${p.name} took the ferry to ☁️ Cloud Island!`; addLog(text, true);
+      return { text, ok: true, seat, sfx: "rare" };
+    }
+    if (p.map === "cloud") { moveTo(p, "w1", W1_PIER.x, W1_PIER.y - 0, "left"); return { text: `${p.name} sailed back to World 1.`, ok: true, seat, neutral: true }; }
+    return null;
+  }
+  if (a.type === "sail") {
+    if (p.map !== "cloud" || !near("sail")) return null;
+    if (!state.sky) {   // a new climb: the whole party sails together
+      state.sky = { seed: 1 + Math.floor(Math.random() * 1e6), started: now };
+      setupFloor(1);
+      const hub = getMap(skyKey(state.sky.seed, 1, 0));
+      let k = 0;
+      state.players.forEach((q, i) => { if (online(i)) { const ar = hub.arrive(k++); moveTo(q, hub.key, ar.x, ar.y, "up"); } });
+      const text = `⛵ ${p.name} set sail — the party climbs the Sky Island! Floor 1: catch ${state.sky.goal} fish or the ⭐ ${CATCH[state.sky.special].name}.`;
+      addLog(text, true);
+      return { text, ok: true, seat, sfx: "rare" };
+    }
+    const hub = getMap(skyKey(state.sky.seed, state.sky.floor, 0)), ar = hub.arrive(seat);
+    moveTo(p, hub.key, ar.x, ar.y, "up");
+    return { text: `${p.name} caught up with the party on floor ${state.sky.floor}.`, ok: true, seat, neutral: true };
+  }
+  if (a.type === "leave") {
+    if (!inSky(p) || !near("leave") || !state.sky) return null;
+    const floor = state.sky.floor;
+    let k = 0;
+    state.players.forEach(q => { if (inSky(q)) moveTo(q, "cloud", CLOUD_DOCK.x - (k++) * .9, CLOUD_DOCK.y, "left"); });
+    state.sky = null;
+    const text = `⛵ The party sailed home from floor ${floor} of the Sky Island. (Best: floor ${state.skyBest || floor})`;
+    addLog(text, true);
+    return { text, ok: true, seat, neutral: true };
+  }
+  if (a.type === "chest") {
+    const sk = state.sky; if (!sk || !inSky(p) || !near("chest")) return null;
+    if (sk.chests[CUR.room]) return { text: "This chest is empty.", ok: false, seat, private: true };
+    sk.chests[CUR.room] = true;
+    const gold = 40 + sk.floor * 35 + Math.floor(Math.random() * 60);
+    state.team.gold += gold; state.team.earned += gold;
+    let extra = "";
+    const r = Math.random();
+    if (r < .15) { p.hourglass = (p.hourglass || 0) + 1; extra = " and a ⏳ Hourglass Charm"; }
+    else if (r < .5) { p.bait.lure = (p.bait.lure || 0) + 5; extra = " and 5 ✨ Shiny Lures"; }
+    const text = `${p.name} opened a sky chest: 💰${gold}${extra}!`; addLog(text, true);
+    return { text, ok: true, seat, sfx: "coin" };
+  }
+  if (a.type === "portal") {
+    if (!inSky(p) || !state.sky || typeof a.x !== "number" || Math.hypot(a.x - p.x, a.y - p.y) > 2.2) return null;
+    const tx = Math.floor(a.x), ty = Math.floor(a.y), t = tileAt(tx, ty);
+    if (t === T.STAIRS) {
+      if (!state.sky.cleared) return null;
+      setupFloor(state.sky.floor + 1);
+      const hub = getMap(skyKey(state.sky.seed, state.sky.floor, 0));
+      let k = 0;
+      state.players.forEach(q => { if (inSky(q)) { const ar = hub.arrive(k++); moveTo(q, hub.key, ar.x, ar.y, "up"); } });
+      const text = `⬆️ The party climbed to floor ${state.sky.floor}! Catch ${state.sky.goal} fish or the ⭐ ${CATCH[state.sky.special].name}.`;
+      addLog(text, true);
+      return { text, ok: true, seat, sfx: "legend" };
+    }
+    const door = CUR.portals.find(d => d.x === tx && d.y === ty);
+    if (!door) return null;
+    state.sky.visited[door.room] = true;
+    if (door.room === 0) moveTo(p, door.to, door.ax, door.ay, "down");          // back to the hub, next to the door you came through
+    else { const ar = getMap(door.to).arrive(seat); moveTo(p, door.to, ar.x, ar.y, "up"); }
+    return { quiet: true, seat };
+  }
+  return null;
+}
+
+// ================= Debug lobby (code EEEEE): playtest tools =================
+const DEBUG_CODE = "EEEEE";
+const isDebug = () => net.code === DEBUG_CODE;
+function debugAction(seat, a) {
+  if (!isDebug()) return null;
+  const p = state.players[seat], say = (text) => ({ text: "🛠️ " + text, ok: true, seat, neutral: true });
+  switch (a.what) {
+    case "gold": state.team.gold += a.n | 0; return say(`+${(a.n | 0).toLocaleString()} gold`);
+    case "fish": {
+      const f = CATCH[a.id]; if (!f) return null;
+      const kg = +(f.kg[0] + (f.kg[1] - f.kg[0]) * (a.big ? 1 : Math.random())).toFixed(2);
+      if (p.items.length >= COOLERS[p.cooler].size) return { text: "Cooler full.", ok: false, seat, private: true };
+      p.items.push({ id: f.id, kg });
+      if (!f.junk) { const d = state.dex[f.id] || (state.dex[f.id] = { n: 0, best: 0, by: p.name }); d.n++; d.best = Math.max(d.best, kg); }
+      return say(`+${f.name} (${kg} kg)`);
+    }
+    case "dex": {
+      const list = a.set === "all" ? FISH : a.set === "w1" ? W1_REQUIRED : FISH.filter(f => f.water.includes(a.set));
+      for (const f of list) if (!state.dex[f.id]) state.dex[f.id] = { n: 1, best: f.kg[1], by: p.name };
+      if (W1_REQUIRED.every(f => state.dex[f.id])) state.unlocked = { ...(state.unlocked || {}), cloud: true };
+      return say(`Journal: ${list.length} fish added`);
+    }
+    case "cleardex": state.dex = {}; state.unlocked = {}; return say("Journal cleared and Cloud Island locked");
+    case "unlock": state.unlocked = { ...(state.unlocked || {}), cloud: true }; return say("Cloud Island unlocked");
+    case "rod": if (!RODS[a.i | 0]) return null; p.rod = a.i | 0; return say(`Rod: ${RODS[p.rod].name}`);
+    case "level": p.xp = XP_AT[clamp((a.n | 0) - 1, 0, 9)]; return say(`Fishing level ${levelOf(p.xp)}`);
+    case "bait": p.bait[a.id] = (p.bait[a.id] || 0) + 10; return say(`+10 ${BAITS[a.id].name}`);
+    case "hourglass": p.hourglass = (p.hourglass || 0) + 3; return say("+3 Hourglass Charms");
+    case "cooler": p.cooler = COOLERS.length - 1; return say("Biggest cooler");
+    case "empty": p.items = []; return say("Cooler emptied");
+    case "time": state.warp = a.mode ? { mode: a.mode, until: Date.now() + WARP_MS, by: "debug" } : null; return say(a.mode ? `Time: ${a.mode} for 30 min` : "Time: real clock");
+    case "go": {
+      if (a.to === "w1") { moveTo(p, "w1", SPAWNS[seat].x, SPAWNS[seat].y); return say("Travelled to World 1"); }
+      if (a.to === "cloud") { state.unlocked = { ...(state.unlocked || {}), cloud: true }; moveTo(p, "cloud", CLOUD_SPAWN.x, CLOUD_SPAWN.y); return say("Travelled to Cloud Island"); }
+      if (a.to === "sky") {
+        state.unlocked = { ...(state.unlocked || {}), cloud: true };
+        const floor = clamp(a.floor | 0 || 1, 1, 99);
+        if (!state.sky) state.sky = { seed: 1 + Math.floor(Math.random() * 1e6), started: Date.now() };
+        setupFloor(floor);
+        const hub = getMap(skyKey(state.sky.seed, floor, 0));
+        let k = 0;
+        state.players.forEach((q, i) => { if (online(i) && (i === seat || inSky(q))) { const ar = hub.arrive(k++); moveTo(q, hub.key, ar.x, ar.y, "up"); } });
+        return say(`Sky Island floor ${floor} (goal ${state.sky.goal} or ⭐ ${CATCH[state.sky.special].name})`);
+      }
+      if (a.to === "pool" && state.sky && inSky(p)) {
+        const def = floorDef(state.sky.seed, state.sky.floor), room = getMap(skyKey(state.sky.seed, state.sky.floor, def.water));
+        state.sky.visited[def.water] = true;
+        const ar = room.arrive(0); moveTo(p, room.key, ar.x, ar.y, "up"); return say("Jumped to the pool room");
+      }
+      return null;
+    }
+    case "clear": if (!state.sky) return null; state.sky.cleared = true; return say(`Floor ${state.sky.floor} cleared — stairs open`);
+    case "special": if (!state.sky) return null; { const f = CATCH[state.sky.special]; p.items.push({ id: f.id, kg: f.kg[1] }); state.sky.cleared = true; return say(`Caught the ⭐ ${f.name}; floor cleared`); }
+  }
+  return null;
+}
 const depthAt = (x, y) => inMap(x, y) ? depth[idx(x, y)] : 0;
 // Ripply "hot spots" move every few minutes; both players see the same ones (they're picked from the clock).
 const HOT_MS = 30 * 60 * 1000;          // bubbling spots move on the hour and half hour
 const hotCache = new Map();
 // more anglers → more bubbling spots (one extra per friend online, spread over the waters)
 function hotSpots(t) {
+  if (mapKey !== "w1") return [];
   const win = Math.floor(t / HOT_MS), extra = (typeof onlineCount === "function" ? onlineCount() : 1) - 1, key = win + ":" + extra;
   if (hotCache.has(key)) return hotCache.get(key);
   const out = [];
@@ -1178,13 +1504,31 @@ const FISH = [
   { id: "tuna",     name: "Bluefin Tuna",    water: ["sea"],   rar: 2, lvl: 5, d: 7, price: 120,  kg: [20, 120],  shape: "std",  col: ["#2a4a8a", "#d8e0f0", "#ffd040", "#1a2a5a"], deep: true },
   { id: "sword",    name: "Swordfish",       water: ["sea"],   rar: 3, lvl: 7, d: 8, price: 300,  kg: [40, 180],  shape: "long", col: ["#4a5a8a", "#d0d8e8", "#2a3a6a", "#3a4a7a"], time: "day", deep: true },
   { id: "moonfish", name: "Moonfish",        water: ["sea"],   rar: 4, lvl: 10,d: 10,price: 1500, kg: [40, 120],  shape: "flat", col: ["#c8d0f0", "#ffffff", "#8a9ae0", "#ffe8a0"], time: "night", deep: true, legend: true },
+  // Sky Island — 13 fish, only found on the floors above Cloud Island
+  { id: "breezeminnow", name: "Breeze Minnow", water: ["sky"], rar: 0, lvl: 1, d: 2, price: 24,   kg: [.05, .3],  shape: "std",  col: ["#b8f0e0", "#f0fff8", "#78c8b0", "#98e0c8"] },
+  { id: "cloudlet",  name: "Cloudlet",       water: ["sky"], rar: 0, lvl: 1, d: 2, price: 30,   kg: [.1, .6],   shape: "std",  col: ["#e8f4ff", "#ffffff", "#a8c8f0", "#c8dcff"] },
+  { id: "puffwing",  name: "Puffwing",       water: ["sky"], rar: 0, lvl: 1, d: 3, price: 36,   kg: [.2, 1],    shape: "flat", col: ["#ffc8e0", "#fff0f6", "#e890b8", "#ffb0d0"] },
+  { id: "zephyr",    name: "Zephyr Perch",   water: ["sky"], rar: 1, lvl: 1, d: 4, price: 70,   kg: [.5, 3],    shape: "std",  col: ["#a0d8ff", "#f0fbff", "#5aa0e0", "#ffe070"] },
+  { id: "misteel",   name: "Mist Eel",       water: ["sky"], rar: 1, lvl: 1, d: 5, price: 80,   kg: [1, 5],     shape: "long", col: ["#c8d0e8", "#f4f6ff", "#8a96c0", "#aab4d8"] },
+  { id: "featherfin",name: "Featherfin",     water: ["sky"], rar: 1, lvl: 1, d: 4, price: 76,   kg: [.5, 4],    shape: "std",  col: ["#ffe8a0", "#fffbe8", "#e8b040", "#ffffff"] },
+  { id: "rainbowray",name: "Rainbow Ray",    water: ["sky"], rar: 2, lvl: 1, d: 6, price: 160,  kg: [3, 15],    shape: "flat", col: ["#ff9ac8", "#fff0f8", "#8ad0ff", "#ffe070"] },
+  { id: "thunderfin",name: "Thunderfin",     water: ["sky"], rar: 2, lvl: 1, d: 7, price: 180,  kg: [2, 12],    shape: "std",  col: ["#5a4ac8", "#d8d0ff", "#ffe040", "#ffe040"] },
+  { id: "hailscale", name: "Hailscale",      water: ["sky"], rar: 2, lvl: 1, d: 6, price: 150,  kg: [2, 10],    shape: "std",  col: ["#d8f4ff", "#ffffff", "#7ac8f0", "#ffffff"] },
+  { id: "cometkoi",  name: "Comet Koi",      water: ["sky"], rar: 3, lvl: 1, d: 8, price: 400,  kg: [3, 10],    shape: "std",  col: ["#ffffff", "#fff8e8", "#ff7a3a", "#5a6ad8"] },
+  { id: "auroratrout",name: "Aurora Trout",  water: ["sky"], rar: 3, lvl: 1, d: 8, price: 420,  kg: [3, 12],    shape: "std",  col: ["#7affc8", "#f0fff8", "#b08aff", "#ff8ad8"] },
+  { id: "celestcarp",name: "Celestial Carp", water: ["sky"], rar: 4, lvl: 1, d: 9, price: 2000, kg: [20, 60],   shape: "std",  col: ["#fff4c0", "#ffffff", "#ffd040", "#b8a0ff"], legend: true },
+  { id: "skywhale",  name: "Sky Whale",      water: ["sky"], rar: 4, lvl: 1, d: 10,price: 2500, kg: [200, 800], shape: "🐋", legend: true },
 ];
 for (const f of FISH) f.w = RAR_WEIGHT[f.rar];
+const SKY_FISH = FISH.filter(f => f.water[0] === "sky");
+const W1_REQUIRED = FISH.filter(f => f.water[0] !== "sky" && !f.legend);     // catch all of these to open the ferry
+const cloudUnlocked = s => !!(s && s.unlocked && s.unlocked.cloud);
 const JUNK = [
   { id: "boot",    name: "Old Boot",       w: 2.5, price: 1, kg: [.4, 1], shape: "👢", junk: true },
   { id: "can",     name: "Tin Can",        w: 2.5, price: 1, kg: [.05, .2], shape: "🥫", junk: true },
   { id: "weed",    name: "Seaweed",        w: 2, price: 2, kg: [.1, .5], shape: "🌿", junk: true },
   { id: "chest",   name: "Treasure Chest", w: .7, price: 0, kg: [3, 9], shape: "🧰", junk: true, treasure: true },
+  { id: "feather", name: "Lost Feather",   w: 3, price: 6, kg: [.01, .05], shape: "🪶", junk: true, sky: true },
 ];
 const CATCH = Object.fromEntries([...FISH, ...JUNK].map(f => [f.id, f]));
 // Rarity tiers: how often a fish turns up decides its tier (legendaries are hand-picked)
@@ -1240,7 +1584,7 @@ function priceOf(item) {
   const f = CATCH[item.id];
   if (!f) return 0;
   const t = clamp((item.kg - f.kg[0]) / (f.kg[1] - f.kg[0] || 1), 0, 1.2);
-  return Math.max(1, Math.round(f.price * (0.7 + 0.7 * t)));
+  return Math.max(1, Math.round(f.price * (0.7 + 0.7 * t) * (item.m || 1)));
 }
 
 // ================= Game state (the host's copy is the truth) =================
@@ -1252,7 +1596,7 @@ const roomMax = () => (state && (state.maxPlayers === 2 || state.maxPlayers === 
 const pickedSize = () => ((readJSON(PREFS_KEY) || {}).lobbySize === 2 ? 2 : 4);
 const onlineCount = () => state ? state.players.filter((p, i) => online(i)).length : 1;
 function newPlayer(i) {
-  return { name: "Player " + (i + 1), look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down", cid: null, online: false,
+  return { name: "Player " + (i + 1), look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down", map: "w1", cid: null, online: false,
            rod: 0, cooler: 0, items: [], bait: { worms: 5, lure: 0, glow: 0 }, useBait: "worms", hourglass: 0, xp: 0, caught: 0, best: null, line: null, tp: 0 };
 }
 function newGame() {
@@ -1269,7 +1613,8 @@ function migrate(s) {
     const p = { ...newPlayer(i), ...sp };
     p.bait = { ...newPlayer(i).bait, ...(p.bait || {}) };
     p.items = (p.items || []).filter(it => it && CATCH[it.id]);
-    if (!walkable(p.x, p.y)) Object.assign(p, SPAWNS[i]);
+    if (!validMap(p.map, out)) Object.assign(p, p.map && p.map !== "w1" ? { map: "cloud", ...CLOUD_SPAWN } : { map: "w1" });
+    if (!withMap(p.map, () => walkable(p.x, p.y))) Object.assign(p, p.map === "w1" ? SPAWNS[i] : p.map === "cloud" ? CLOUD_SPAWN : { x: 6.5, y: 8.5 });
     return p;
   });
   return out;
@@ -1300,6 +1645,7 @@ function castRay(p, power) {
 }
 
 function rollCatch(p, tx, ty, now) {
+  if (WATER_KEYS[tileAt(tx, ty)] === "sky") return rollSky(p, now);
   const kind = WATER_KEYS[tileAt(tx, ty)], deep = depthAt(tx, ty) >= (kind === "river" ? 2 : 3),   // the river's middle channel counts as deep
     night = isNight(now), lvl = levelOf(p.xp);
   const bait = p.useBait && p.bait[p.useBait] > 0 ? p.useBait : null;
@@ -1307,7 +1653,7 @@ function rollCatch(p, tx, ty, now) {
   let rare = 1 + rod.power * .15 + (hot ? .6 : 0) + (bait === "lure" ? 1 : 0) + (bait === "glow" && (night || deep) ? 1.2 : 0);
   const pool = FISH.filter(f => f.water.includes(kind) && f.lvl <= lvl && (!f.time || f.time === (night ? "night" : "day")) && (!f.deep || deep))
     .map(f => ({ f, w: f.rarity >= 2 ? f.w * rare : f.rarity === 1 ? f.w * (1 + (rare - 1) * .4) : f.w }));
-  pool.push(...JUNK.map(f => ({ f, w: f.treasure ? f.w * (1 + rod.power * .2) : f.w * Math.max(.3, 1 - rod.power * .15 - (bait ? .3 : 0)) })));
+  pool.push(...JUNK.filter(f => !f.sky).map(f => ({ f, w: f.treasure ? f.w * (1 + rod.power * .2) : f.w * Math.max(.3, 1 - rod.power * .15 - (bait ? .3 : 0)) })));
   let roll = Math.random() * pool.reduce((a, o) => a + o.w, 0), pick = pool[0].f;
   for (const o of pool) { roll -= o.w; if (roll <= 0) { pick = o.f; break; } }
   const look = cleanLook(p.look);
@@ -1325,7 +1671,12 @@ function rollCatch(p, tx, ty, now) {
 
 // ---- Host: apply an action from either player, return a result to broadcast (or null)
 let lineSeq = 1;
+const mapOf = seat => (state.players[seat] && state.players[seat].map) || "w1";
 function applyAction(seat, a) {
+  if (!state.players[seat]) return null;
+  return withMap(mapOf(seat), () => applyActionCore(seat, a));
+}
+function applyActionCore(seat, a) {
   const p = state.players[seat], now = Date.now();
   if (!a || typeof a !== "object") return null;
   if (a.type === "cast") {
@@ -1412,6 +1763,8 @@ function applyAction(seat, a) {
     return { text, ok: true, seat, sfx: "rare" };
   }
   if (a.type === "bait") { if (a.id === "none" || BAITS[a.id]) p.useBait = a.id; return { quiet: true, seat }; }
+  if (["ferry", "sail", "leave", "portal", "chest"].includes(a.type)) return travelAction(seat, a, now);
+  if (a.type === "debug") return debugAction(seat, a);
   if (a.type === "release") { const it = p.items[a.i | 0]; if (!it) return null; p.items.splice(a.i | 0, 1); return { text: `Released the ${CATCH[it.id].name}. 🌊`, ok: true, seat, private: true }; }
   return null;
 }
@@ -1426,8 +1779,9 @@ function landCatch(seat, ok) {
     const text = `${p.name} fished up a treasure chest with 💰${gold}!`; addLog(text, true);
     return { text, ok: true, seat, sfx: "coin", fx: { x: L.x, y: L.y, text: `+${gold}💰`, color: "#ffd860" }, petHop: true };
   }
-  if (p.items.length >= COOLERS[p.cooler].size) return { text: "Your cooler is full! The catch flopped back in. Sell at the 🐟 Fish Market.", ok: false, seat, fx: { x: L.x, y: L.y, text: "🧊 full", color: "#ff9a8a" } };
-  p.items.push({ id: f.id, kg: L.kg });
+  const skyNote = (!f.junk && L.floor) ? skyProgress(f) : "";
+  if (p.items.length >= COOLERS[p.cooler].size) return { text: "Your cooler is full! The catch flopped back in." + (skyNote ? " " + skyNote : " Sell at the 🐟 Fish Market."), ok: !!skyNote, seat, fx: { x: L.x, y: L.y, text: "🧊 full", color: "#ff9a8a" }, sfx: skyNote.includes("cleared") ? "legend" : undefined };
+  p.items.push(L.floor ? { id: f.id, kg: L.kg, m: +(1 + (L.floor - 1) * .08).toFixed(2) } : { id: f.id, kg: L.kg });
   const before = levelOf(p.xp);
   const xp = f.junk ? 1 : 2 + f.d * 3 + (f.legend ? 60 : 0);
   p.xp += xp;
@@ -1444,8 +1798,13 @@ function landCatch(seat, ok) {
     if (first) text += " 📖 New in the journal!";
     else if (record) text += " 🏆 New record!";
     if (up) text += ` 🎣 Fishing level ${up}!`;
+    if (!cloudUnlocked(state) && W1_REQUIRED.every(q => state.dex[q.id])) {
+      state.unlocked = { ...(state.unlocked || {}), cloud: true };
+      text += " ⛴️ Every fish found — the ferry to Cloud Island is open at the end of the ocean pier!";
+    }
+    if (skyNote) text += " " + skyNote;
     addLog(text, true);
-    return { text, ok: true, seat, sfx: f.rarity >= 3 ? "legend" : f.rarity === 2 ? "rare" : "catch", fx: { x: L.x, y: L.y, text: f.rarity ? `${rr.name}! +${xp} xp` : `+${xp} xp`, color: rr.col }, petHop: true, levelUp: up, caughtId: f.id, rarity: f.rarity };
+    return { text, ok: true, seat, sfx: f.rarity >= 3 || skyNote.includes("cleared") ? "legend" : f.rarity === 2 ? "rare" : "catch", fx: { x: L.x, y: L.y, text: f.rarity ? `${rr.name}! +${xp} xp` : `+${xp} xp`, color: rr.col }, petHop: true, levelUp: up, caughtId: f.id, rarity: f.rarity };
   }
   return { text: `${p.name} reeled in… ${f.shape} ${f.name.toLowerCase()}. Ew.`, ok: true, seat, neutral: true, fx: { x: L.x, y: L.y, text: f.shape, color: "#ffffff" } };
 }
@@ -1464,6 +1823,9 @@ setInterval(() => {
 }, 500);
 
 const TEAM_GOALS = [
+  { label: "Open the ferry to Cloud Island", test: s => cloudUnlocked(s) },
+  { label: "Reach floor 5 of the Sky Island", test: s => (s.skyBest || 0) >= 5 },
+  { label: "Reach floor 10 of the Sky Island", test: s => (s.skyBest || 0) >= 10 },
   { label: "Catch 10 fish together",       test: s => s.team.caught >= 10 },
   { label: "Catch 50 fish together",       test: s => s.team.caught >= 50 },
   { label: "Catch 250 fish together",      test: s => s.team.caught >= 250 },
@@ -1495,7 +1857,7 @@ function recordRecent(code, role) {
   writeJSON(RECENT_KEY, list.slice(0, 8));
 }
 
-function hostLobby(code) {
+function hostLobby(code, debugJoin) {
   const name = myName();
   if (!name) return lobbyMsg("Enter your name first.", true);
   if (typeof Peer === "undefined") return lobbyMsg("Couldn't load the multiplayer library. Check your connection.", true);
@@ -1531,6 +1893,7 @@ function hostLobby(code) {
   });
   peer.on("error", err => {
     if (err.type === "unavailable-id") {
+      if (debugJoin) { teardown(); return joinLobby(code, true); }
       if (reopening) return lobbyMsg(`Lobby ${code} is already open somewhere else.`, true);
       return hostLobby();
     }
@@ -1560,7 +1923,8 @@ function onHostData(c, msg) {
     c._seat = seat; net.conns.set(seat, c);
     const g = state.players[seat];
     Object.assign(g, { cid, online: true, line: null, name: String(msg.name || "Player " + (seat + 1)).slice(0, 12), look: cleanLook(msg.look, seat) });
-    if (!walkable(g.x, g.y)) Object.assign(g, SPAWNS[seat]);
+    if (!validMap(g.map)) Object.assign(g, { map: cloudUnlocked(state) ? "cloud" : "w1", ...(cloudUnlocked(state) ? CLOUD_SPAWN : SPAWNS[seat]) });
+    if (!withMap(g.map || "w1", () => walkable(g.x, g.y))) Object.assign(g, g.map === "cloud" ? CLOUD_SPAWN : { map: "w1", ...SPAWNS[seat] });
     const n = onlineCount();
     save();
     broadcast({ text: `${g.name} joined — ${n} anglers fishing!${n > 1 ? ` Party bonus: +${(n - 1) * 5}% at the market.` : ""}`, ok: true });
@@ -1577,7 +1941,7 @@ function onHostData(c, msg) {
   } else if (msg.type === "move") {
     const g = state.players[seat];
     if (DIRS[msg.dir]) g.dir = msg.dir;
-    if (typeof msg.x === "number" && typeof msg.y === "number" && walkable(msg.x, msg.y) && Math.hypot(msg.x - g.x, msg.y - g.y) < 4) { g.x = msg.x; g.y = msg.y; }
+    if (typeof msg.x === "number" && typeof msg.y === "number" && withMap(g.map || "w1", () => walkable(msg.x, msg.y)) && Math.hypot(msg.x - g.x, msg.y - g.y) < 4) { g.x = msg.x; g.y = msg.y; }
     else if ((msg.tp ?? g.tp) !== g.tp) {}
     g.anim = msg.anim || 0;
     for (const [s2, c2] of net.conns) if (s2 !== seat && c2.open) c2.send({ type: "pos", seat, x: g.x, y: g.y, dir: g.dir, anim: g.anim });
@@ -1601,10 +1965,11 @@ function sendMove(force) {
   else if (net.conn && net.conn.open) net.conn.send(msg);
 }
 
-function joinLobby(code) {
+function joinLobby(code, triedHost) {
   const name = myName();
   if (!name) return lobbyMsg("Enter your name first.", true);
   code = (code || "").trim().toUpperCase();
+  if (code === DEBUG_CODE && !triedHost) return hostLobby(DEBUG_CODE, true);   // the debug lobby: open it, or join it if a friend already has
   if (code.length !== 5) return lobbyMsg("Lobby codes are 5 characters.", true);
   if (typeof Peer === "undefined") return lobbyMsg("Couldn't load the multiplayer library. Check your connection.", true);
   teardown();
@@ -1797,8 +2162,9 @@ const WATER_COL = {
   11: ["#5ab0e0", "#4a9ad4", "#3c88c6"],
   12: ["#62b4e2", "#4c98d2", "#3a7ebe", "#2e68aa", "#26579a"],
   13: ["#52bcd2", "#3ea0c2", "#2e84b2", "#22689c", "#1a5286"],
+  14: ["#c4ecff", "#a4daff", "#8ac6f8", "#78b4f0"],
 };
-const waterKindAt = (x, y) => { const t = tileAt(x, y); return isWater(t) ? t : (t === T.DOCK || t === T.BRIDGE) ? under[idx(x, y)] : 0; };
+const waterKindAt = (x, y) => { const t = tileAt(x, y); return isWater(t) ? t : (t === T.DOCK || t === T.BRIDGE || t === T.BUILD) && inMap(x, y) ? under[idx(x, y)] : 0; };
 const grassSrc = (x, y) => { const lx = ((x % CH) + CH) % CH, ly = ((y % CH) + CH) % CH; return [lx * 64, ly * 64, 64, 64]; };
 // ---- Ground, pre-drawn once per 15×15 chunk (the size of one Grass BG).
 // Everything is drawn tile by tile so nothing paints outside its own tile: that keeps chunk seams clean
@@ -1820,9 +2186,9 @@ function grassTop(g, x, y) {
   g.restore();
 }
 function isoChunk(cx, cy) {
-  const key = cx + "," + cy;
+  const key = mapKey + "|" + cx + "," + cy;
   if (bgCache.has(key)) { const v = bgCache.get(key); bgCache.delete(key); bgCache.set(key, v); return v; }
-  const x0 = cx * CH, y0 = cy * CH, R = isoCanvas(x0, y0, CH, CH), g = R.g;
+  const x0 = cx * CH, y0 = cy * CH, R = isoCanvas(x0, y0, CH, CH, .6, CUR.kind === "w1" ? .6 : 2.2), g = R.g;
   for (let sum = 0; sum <= 2 * CH - 2; sum++) for (let lx = 0; lx < CH; lx++) {
     const ly = sum - lx; if (ly < 0 || ly >= CH) continue;
     const x = x0 + lx, y = y0 + ly, t = tileAt(x, y), wk = waterKindAt(x, y);
@@ -1836,13 +2202,21 @@ function isoChunk(cx, cy) {
       if (!waterKindAt(x, y - 1)) { const a = iso(x, y, WZ), b = iso(x + 1, y, WZ); g.beginPath(); g.moveTo(a.x, a.y + 1.5); g.lineTo(b.x, b.y + 1.5); g.stroke(); }
       continue;
     }
-    const sand = t === T.SAND;
+    if (t === T.VOID || (CUR.voidB && CUR.voidB.has(idx(x, y)))) continue;  // open sky (and things hanging over it): nothing to draw
+    const sand = t === T.SAND, fluff = t === T.CLOUD;
+    if (tileAt(x + 1, y) === T.VOID || tileAt(x, y + 1) === T.VOID)             // a floating island: earth (or cloud) underneath
+      column(g, x, y, 0, { z0: fluff ? -.7 : -1.6, sideL: fluff ? "#eef4ff" : "#9a7a52", sideR: fluff ? "#d2def0" : "#7a5a3a" });
     if (waterKindAt(x + 1, y) || waterKindAt(x, y + 1))                       // a little bank down to the water in front
       column(g, x, y, 0, { z0: WZ - .06, sideL: sand ? "#c8a86a" : "#7a5a32", sideR: sand ? "#a88a50" : "#5a4022" });
     if (t === T.PATH) {
       grassTop(g, x, y);                                                   // shows through the gaps in Broken Path
       if (TEX.brick) texTop(g, TEX.broken && hash2(x, y, 41) < .1 ? TEX.broken : TEX.brick, [0, 0, 64, 64], x, y);
       else polyFill(g, diamond(x, y), "#b89a70");
+    } else if (fluff) {
+      polyFill(g, diamond(x, y), "#f6faff");
+      for (let k = 0; k < 4; k++) { const p = iso(x + .2 + hash2(x, y, 60 + k) * .6, y + .2 + hash2(x, y, 70 + k) * .6); g.fillStyle = k % 2 ? "#ffffff" : "#e4eefc"; g.beginPath(); g.ellipse(p.x, p.y, 9, 4.5, 0, 0, 7); g.fill(); }
+    } else if (t === T.PORTAL || t === T.STAIRS) {
+      polyFill(g, diamond(x, y), "#a89880"); polyFill(g, diamond(x + .12, y + .12).map((p, k) => ({ x: p.x - [0, 1, 0, -1][k] * 4, y: p.y })), "#c8b8a0");
     } else if (sand) {
       polyFill(g, diamond(x, y), "#e4cf94");
       for (let k = 0; k < 6; k++) { const p = iso(x + .15 + hash2(x, y, 30 + k) * .7, y + .15 + hash2(x, y, 40 + k) * .7); g.fillStyle = k % 2 ? "#d4bc7c" : "#f2e2b0"; g.fillRect(p.x - 1.5, p.y - 1, 3, 2); }
@@ -1853,8 +2227,71 @@ function isoChunk(cx, cy) {
     } else if (t === T.BUILD) polyFill(g, diamond(x, y), "rgba(40,30,20,.25)");
   }
   bgCache.set(key, R);
-  while (bgCache.size > 12) bgCache.delete(bgCache.keys().next().value);
+  while (bgCache.size > 16) bgCache.delete(bgCache.keys().next().value);
   return R;
+}
+// ---- Sky Island doors (swirling portals) and the stairs to the next floor
+function portalInfo(d) {
+  if (!state.sky) return "";
+  if (d.room === 0) return "⬅ Hub";
+  const def = floorDef(state.sky.seed, state.sky.floor), k = def.kinds[d.room], seen = state.sky.visited && state.sky.visited[d.room];
+  if (!seen) return `❔ Room ${d.room}`;
+  return k === "pool" ? "🌊 Pool" : k === "chest" ? (state.sky.chests[d.room] ? "✅ Chest" : "🎁 Chest") : "🌳 Grove";
+}
+function drawPortalIso(x, y, now) {
+  const C = iso(x + .5, y + .5), t = now / 600;
+  for (let k = 3; k >= 0; k--) {
+    const r = 1 - k * .2, a = (t + k * .4) % (Math.PI * 2);
+    ctx.fillStyle = ["rgba(150,90,255,.35)", "rgba(190,130,255,.45)", "rgba(220,180,255,.55)", "rgba(255,240,255,.75)"][k];
+    ctx.beginPath(); ctx.ellipse(C.x, C.y, 26 * r, 13 * r, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(C.x, C.y, 26 * r, 13 * r, 0, a, a + 1.6); ctx.stroke();
+  }
+  for (let k = 0; k < 4; k++) { const p = ((now / 900) + k / 4) % 1; ctx.fillStyle = `rgba(240,220,255,${1 - p})`; ctx.fillRect(C.x + Math.sin(k * 2.1 + t) * 14 - 1.5, C.y - p * 34, 3, 3); }
+}
+function drawStairsIso(x, y, now) {
+  const open = skyCleared(), C = iso(x + .5, y + .5);
+  for (let k = 0; k < 4; k++) {
+    const s = 1 - k * .2, z = k * .18;
+    const pts = [iso(x + .5 - .45 * s, y + .5 - .45 * s, z), iso(x + .5 + .45 * s, y + .5 - .45 * s, z), iso(x + .5 + .45 * s, y + .5 + .45 * s, z), iso(x + .5 - .45 * s, y + .5 + .45 * s, z)];
+    polyFill(ctx, pts, open ? ["#ffe8a0", "#ffd860", "#ffc830", "#fff4c0"][k] : ["#8a8478", "#9a9488", "#aaa498", "#bab4a8"][k], "rgba(40,30,20,.35)");
+  }
+  if (open) { const g = .5 + .5 * Math.sin(now / 250); ctx.fillStyle = `rgba(255,230,120,${.25 + g * .2})`; ctx.beginPath(); ctx.ellipse(C.x, C.y - 20, 30, 40, 0, 0, 7); ctx.fill(); }
+}
+function drawBoatIso(b, now) {
+  const air = !!b.air, bob = air ? Math.sin(now / 500) * 3 : Math.sin(now / 700) * 1.5, z0 = air ? .55 : .02, x0 = b.x + .05, x1 = b.x + b.w - .05, y0 = b.y + .1, y1 = b.y + b.h - .1;
+  const P = (x, y, z) => { const q = iso(x, y, z); return { x: q.x, y: q.y + bob }; };
+  if (air) { const S = iso((x0 + x1) / 2, (y0 + y1) / 2); ctx.fillStyle = "rgba(40,60,100,.18)"; ctx.beginPath(); ctx.ellipse(S.x, S.y, 30, 12, 0, 0, 7); ctx.fill(); }
+  const hullTop = [P(x0, y0, z0 + .45), P(x1, y0, z0 + .45), P(x1, y1, z0 + .45), P(x0, y1, z0 + .45)];
+  polyFill(ctx, [P(x0, y1, z0 + .45), P(x1, y1, z0 + .45), P(x1 - .1, y1 - .05, z0), P(x0 + .1, y1 - .05, z0)], "#8a5222", "#3a2010", 1.5);
+  polyFill(ctx, [P(x1, y1, z0 + .45), P(x1, y0, z0 + .45), P(x1 - .05, y0 + .1, z0), P(x1 - .1, y1 - .05, z0)], "#6a3e18", "#3a2010", 1.5);
+  polyFill(ctx, hullTop, "#c8945a", "#5a3418", 1.5);
+  ctx.strokeStyle = "#8a5a2a"; ctx.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { const a = P(x0 + (x1 - x0) * k / 4, y0, z0 + .45), c = P(x0 + (x1 - x0) * k / 4, y1, z0 + .45); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, M0 = P(mx, my, z0 + .45), M1 = P(mx, my, z0 + 2.4);
+  ctx.strokeStyle = "#5a3418"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(M0.x, M0.y); ctx.lineTo(M1.x, M1.y); ctx.stroke();
+  if (air) {   // a sky boat hangs from a striped balloon
+    const B = P(mx, my, z0 + 3.4);
+    ctx.strokeStyle = "rgba(60,40,20,.6)"; ctx.lineWidth = 1;
+    for (const [dx, dy] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) { const q = P(dx, dy, z0 + .45); ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(B.x + (q.x - B.x) * .45, B.y + 20); ctx.stroke(); }
+    for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? "#ffffff" : "#ff8a7a"; ctx.beginPath(); ctx.ellipse(B.x, B.y, 30 - k * 5, 24, 0, 0, 7); ctx.fill(); }
+    ctx.strokeStyle = "#7a3a30"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(B.x, B.y, 30, 24, 0, 0, 7); ctx.stroke();
+  } else {
+    const S0 = P(mx, my, z0 + 2.3), S1 = P(mx, my, z0 + .8), S2 = P(mx + .9, my, z0 + .9);
+    ctx.fillStyle = "#f4f0e8"; ctx.beginPath(); ctx.moveTo(S0.x, S0.y); ctx.lineTo(S1.x, S1.y); ctx.lineTo(S2.x, S2.y); ctx.closePath(); ctx.fill(); ctx.strokeStyle = "#a89880"; ctx.stroke();
+    ctx.fillStyle = "#e8483e"; ctx.fillRect(M1.x - 1, M1.y - 2, 10, 6);
+  }
+  signBoard(b, P(mx, y1 + .3, z0 + (air ? 1.1 : .9)));
+}
+function drawChestIso(b, now) {
+  const open = state.sky && state.sky.chests && state.sky.chests[CUR.room], x = b.x, y = b.y;
+  column(ctx, x + .2, y + .25, .45, { sideL: "#8a5a2a", sideR: "#6a4020", color: open ? "#3a2410" : "#b07a44" });
+  if (open) { polyFill(ctx, [iso(x + .2, y + .25, .45), iso(x + .8, y + .25, .45), iso(x + .8, y + .25, .95), iso(x + .2, y + .25, .95)], "#b07a44", "#5a3418"); }
+  else { const c = iso(x + .5, y + .55, .45); ctx.fillStyle = "#ffd860"; ctx.fillRect(c.x - 3, c.y - 2, 6, 5); const g = .5 + .5 * Math.sin(now / 300); ctx.fillStyle = `rgba(255,230,120,${.15 + g * .2})`; ctx.beginPath(); ctx.arc(c.x, c.y - 10, 22, 0, 7); ctx.fill(); }
+}
+function drawBuildingIso(b, now) {
+  if (b.kind === "boat") return drawBoatIso(b, now);
+  if (b.kind === "chest") return drawChestIso(b, now);
+  return (b.stall ? drawStallIso : drawHouseIso)(b, now);
 }
 // ---- Docks, the pier and bridges: wooden decks on pilings, drawn live above the water (sorted back to front)
 const DECK_Z = .14;
@@ -1863,7 +2300,7 @@ function drawDeckIso(x, y) {
   const t = tileAt(x, y), across = deckAcross(x, y), g = ctx;
   // pilings at the two front corners, from the waterline up to the deck
   for (const [px, py] of [[x + .08, y + .92], [x + .92, y + .92], [x + .92, y + .08]]) {
-    if (across && px < x + .5 && py < y + .5) continue;
+    if ((across && px < x + .5 && py < y + .5) || !waterKindAt(x, y)) continue;
     const a = iso(px, py, WZ - .05), b = iso(px, py, DECK_Z);
     g.fillStyle = "#4a2c18"; g.fillRect(a.x - 2.5, b.y, 5, a.y - b.y);
     g.fillStyle = "rgba(220,245,255,.6)"; g.fillRect(a.x - 4, a.y - 1, 8, 1.5);
@@ -2005,7 +2442,7 @@ function updatePets(dt) {
     if (p.line) { tx = d.x - by * .7 - bx * .2; ty = d.y + bx * .7 - by * .2; }     // sit to one side while fishing
     else { const sd = i % 2 ? -.25 : .25; tx += sd * Math.abs(by); ty -= sd * Math.abs(bx); }
     let q = petPos[i];
-    if (!q || Math.hypot(q.x - tx, q.y - ty) > 5) q = petPos[i] = { x: tx, y: ty, flip: false, moving: 0 };
+    if (!q || q.map !== p.map || Math.hypot(q.x - tx, q.y - ty) > 5) q = petPos[i] = { x: tx, y: ty, flip: false, moving: 0, map: p.map };
     const dx = tx - q.x, dy = ty - q.y, dist = Math.hypot(dx, dy);
     if (dist > 0.1) {
       const sp = Math.min(dist, Math.max(3.2, dist * 5) * dt);
@@ -2146,10 +2583,11 @@ let lastFrame = performance.now();
 function draw(now) {
   const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now;
   if (!state || !document.body.classList.contains("ingame")) return;
+  { const mine = state.players[net.seat]; if (!validMap(mine.map)) mine.map = "w1"; if (mapKey !== (mine.map || "w1")) useMap(getMap(mine.map || "w1")); }
   tickLocal(dt, now);
   for (let i = 0; i < state.players.length; i++) {
     const p = state.players[i];
-    if (!disp[i] || Math.hypot(disp[i].x - p.x, disp[i].y - p.y) > 4) disp[i] = { x: p.x, y: p.y, moving: false };
+    if (!disp[i] || disp[i].map !== p.map || Math.hypot(disp[i].x - p.x, disp[i].y - p.y) > 4) disp[i] = { x: p.x, y: p.y, moving: false, map: p.map };
     const d = disp[i];
     if (i === net.seat) { d.moving = moveVec.len > 0; d.x = p.x; d.y = p.y; }
     else { const k = 1 - Math.pow(.0005, dt), ox = d.x, oy = d.y; d.x += (p.x - d.x) * k; d.y += (p.y - d.y) * k; d.moving = Math.hypot(d.x - ox, d.y - oy) > dt * .4; }
@@ -2158,7 +2596,16 @@ function draw(now) {
   updatePets(dt);
   updateView(disp[net.seat]);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#1a4a7a"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (CUR.kind === "w1") { ctx.fillStyle = "#1a4a7a"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  else {                                                                       // up in the sky: blue gradient and drifting clouds
+    const gr = ctx.createLinearGradient(0, 0, 0, canvas.height); gr.addColorStop(0, "#6fb8f4"); gr.addColorStop(1, "#d6efff");
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let k = 0; k < 7; k++) {
+      const w = canvas.width, x = ((hash2(k, 1, 9) * w + now * (.008 + k * .002) * w / 100) % (w + 300)) - 150, y = hash2(k, 2, 9) * canvas.height;
+      ctx.fillStyle = "rgba(255,255,255,.55)";
+      for (let j = 0; j < 4; j++) { ctx.beginPath(); ctx.ellipse(x + j * 40 * cam.dpr, y + Math.sin(j) * 8, 50 * cam.dpr, 20 * cam.dpr, 0, 0, 7); ctx.fill(); }
+    }
+  }
   ctx.setTransform(cam.s, 0, 0, cam.s, -cam.x0 * cam.s, -cam.y0 * cam.s);
   ctx.imageSmoothingEnabled = false;
   // visible tile range (with a margin for tall things)
@@ -2176,7 +2623,10 @@ function draw(now) {
   // docks, the pier and bridges, back to front
   for (let sum = tx0 + ty0; sum <= tx1 + ty1; sum++) for (let x = tx0; x <= tx1; x++) {
     const y = sum - x; if (y < ty0 || y > ty1) continue;
-    const t = tileAt(x, y); if ((t === T.DOCK || t === T.BRIDGE) && onScreen(x, y)) drawDeckIso(x, y);
+    const t = tileAt(x, y); if (!onScreen(x, y)) continue;
+    if (t === T.DOCK || t === T.BRIDGE) drawDeckIso(x, y);
+    else if (t === T.PORTAL) drawPortalIso(x, y, now);
+    else if (t === T.STAIRS) drawStairsIso(x, y, now);
   }
   // water sparkle, jumping fish and hot spots
   const hn = hostNow();
@@ -2198,7 +2648,7 @@ function draw(now) {
       ctx.beginPath(); ctx.arc(bx, by, 2 + t * 4, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  const seen = online, NP = state.players.length;
+  const myMap = state.players[net.seat].map || "w1", seen = i => online(i) && (state.players[i].map || "w1") === myMap, NP = state.players.length;
   for (let i = 0; i < NP; i++) if (state.players[i].line && seen(i) && disp[i]) drawBobber(i, now);
   // things that stand up, sorted back to front (x + y)
   const things = [];
@@ -2210,8 +2660,8 @@ function draw(now) {
       things.push({ k: x + y + 1, draw: () => drawTreeIso(x, y, art) });
     } else things.push({ k: x + y + 1, draw: () => drawRockIso(x, y) });
   }
-  for (const b of BUILDINGS) if (b.x + b.w >= tx0 && b.x <= tx1 && b.y + b.h >= ty0 && b.y <= ty1) things.push({ k: b.x + b.y + b.h - .2, draw: () => (b.stall ? drawStallIso : drawHouseIso)(b, now) });
-  for (const id of ["tackle", "market"]) {
+  for (const b of BUILDINGS) if (b.x + b.w >= tx0 && b.x <= tx1 && b.y + b.h >= ty0 && b.y <= ty1) things.push({ k: b.x + b.y + b.h - .2 + (b.kind === "boat" ? .6 : 0), draw: () => drawBuildingIso(b, now) });
+  if (mapKey === "w1") for (const id of ["tackle", "market"]) {
     const kp = KEEPER_SPOT[id]();
     things.push({ k: kp.x + kp.y, draw: () => { const P = iso(kp.x, kp.y); drawSprite(lookSprites(cleanLook(SHOPKEEPS[id].look)).left.idle[Math.floor(now / 800) % 2], P.x - 24, P.y - 57); } });
   }
@@ -2224,7 +2674,7 @@ function draw(now) {
       drawSprite(poseFor(i, now), F.x - 24, F.y - 57);
       drawRod(i);
     } });
-    if (petPos[i]) things.push({ k: petPos[i].x + petPos[i].y - .02, draw: () => drawPet(i, now) });
+    if (petPos[i] && petPos[i].map === myMap) things.push({ k: petPos[i].x + petPos[i].y - .02, draw: () => drawPet(i, now) });
   }
   things.sort((a, b) => a.k - b.k).forEach(t => t.draw());
   for (let i = 0; i < NP; i++) if (state.players[i].line && seen(i) && disp[i]) drawLine(i, now);
@@ -2237,7 +2687,12 @@ function draw(now) {
     const b = bubbles[i]; if (b && now < b.until) bubble(b.text, F.x, F.y - (bite ? 120 : p.line && p.line.hooked && i !== net.seat ? 92 : 78));
     drawBiteAlert(i, now);
   }
-  for (const id of ["tackle", "market"]) { const kp = KEEPER_SPOT[id](), P = iso(kp.x, kp.y); label(SHOPKEEPS[id].name, P.x, P.y - 66, "#ffe8a0", 9); }
+  if (mapKey === "w1") for (const id of ["tackle", "market"]) { const kp = KEEPER_SPOT[id](), P = iso(kp.x, kp.y); label(SHOPKEEPS[id].name, P.x, P.y - 66, "#ffe8a0", 9); }
+  for (const d of CUR.portals) { const P = iso(d.x + .5, d.y + .5); label(portalInfo(d), P.x, P.y - 40, "#f0e0ff", 10); }
+  if (state.sky && CUR.room === 0 && inSky(state.players[net.seat])) {
+    const P = iso(6.5, 6.5, .7), sk = state.sky;
+    label(sk.cleared ? `⬆ Floor ${sk.floor + 1}` : `🔒 ${sk.got}/${sk.goal} · ⭐ ${CATCH[sk.special].name}`, P.x, P.y - 34, sk.cleared ? "#ffe070" : "#ffffff", 10);
+  }
   for (let i = fxList.length - 1; i >= 0; i--) {
     const f = fxList[i], t = (now - f.t0) / 1600;
     if (t >= 1) { fxList.splice(i, 1); continue; }
@@ -2373,10 +2828,12 @@ function drawReel(now, sw, sh) {
 // ================= Full-screen map: tap the minimap. Zoom slider, drag to pan, ✕ follows the left/right layout =================
 const BM = { open: false, k: 2, cx: 0, cy: 0, drag: null, base: null };
 const bmEl = document.getElementById("bigmap"), bmCan = document.getElementById("bigmap-canvas"), bmCtx = bmCan.getContext("2d"), bmZoom = document.getElementById("bigmap-zoom");
-function bigBase() {           // the whole world at 8 px per tile, drawn once
-  if (BM.base) return BM.base;
+function bigBase() {           // the whole map at 8 px per tile, drawn once per map
+  if (BM.base && BM.baseKey === mapKey) return BM.base;
+  BM.baseKey = mapKey;
   const P = 8, c = mkCanvas(MW * P, MH * P), g = c.getContext("2d");
-  const cols = { [T.GRASS]: "#5aa84a", [T.FLOWER]: "#62b04e", [T.SAND]: "#e4cf94", [T.PATH]: "#b8704a", [T.DOCK]: "#b07a44", [T.BRIDGE]: "#b07a44", [T.TREE]: "#2e6a34", [T.BUILD]: "#c8b48e", [T.ROCK]: "#8a8a94" };
+  const cols = { [T.GRASS]: "#5aa84a", [T.FLOWER]: "#62b04e", [T.SAND]: "#e4cf94", [T.PATH]: "#b8704a", [T.DOCK]: "#b07a44", [T.BRIDGE]: "#b07a44", [T.TREE]: "#2e6a34", [T.BUILD]: "#c8b48e", [T.ROCK]: "#8a8a94",
+                [T.VOID]: "#a8d8ff", [T.CLOUD]: "#ffffff", [T.PORTAL]: "#b070ff", [T.STAIRS]: "#ffd860" };
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
     const t = tileAt(x, y);
     if (isWater(t)) { const cs = WATER_COL[t], d = depthAt(x, y) || 1; g.fillStyle = cs[Math.min(d - 1, cs.length - 1)]; }
@@ -2417,7 +2874,8 @@ function drawBigMap(now) {
   };
   // place names
   const fs = clamp(s * 1.6, 11, 22);
-  [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]].forEach(([n, x, y]) => lab(n, tx(x), ty(y), "#e8f6ff", fs));
+  if (mapKey === "w1") [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]].forEach(([n, x, y]) => lab(n, tx(x), ty(y), "#e8f6ff", fs));
+  for (const d of CUR.portals) lab(portalInfo(d) || "🌀", tx(d.x + .5), ty(d.y + .5), "#f0e0ff", clamp(s * .9, 10, 16));
   for (const b of BUILDINGS) lab(s < 18 ? b.sign : `${b.sign} ${b.name}`, tx(b.x + b.w / 2), ty(b.y - .8), "#ffe8a0", s < 18 ? clamp(s * 1.6, 13, 20) : clamp(s * 1.1, 10, 16));   // icons only until there's room for names
   // bubbling spots
   for (const hs of hotSpots(hostNow())) {
@@ -2426,7 +2884,7 @@ function drawBigMap(now) {
     g.fillStyle = "#ffffff"; g.beginPath(); g.arc(X, Y, 3, 0, 7); g.fill();
   }
   // players (you on top)
-  const order = state.players.map((p, i) => i).filter(i => online(i) && i !== net.seat).concat(net.seat);
+  const order = state.players.map((p, i) => i).filter(i => online(i) && i !== net.seat && state.players[i].map === state.players[net.seat].map).concat(net.seat);
   for (const i of order) {
     const d = disp[i] || state.players[i], X = tx(d.x), Y = ty(d.y), col = SEAT_COL[i], me = i === net.seat;
     if (me) { const p = (now / 1100) % 1; g.strokeStyle = `rgba(143,208,255,${.8 * (1 - p)})`; g.lineWidth = 3; g.beginPath(); g.arc(X, Y, 8 + p * 16, 0, 7); g.stroke(); }
@@ -2435,6 +2893,7 @@ function drawBigMap(now) {
     lab(state.players[i].name + (me ? " (you)" : ""), X, Y - 17, col, 13);
   }
   document.getElementById("bigmap-key").textContent = state.players.map((p, i) => online(i) ? `${SEAT_ICON[i]} ${p.name}` : "").filter(Boolean).join(" · ") + " · ⚪ bubbling spot";
+  document.querySelector(".bigmap-head b").textContent = "🗺️ " + (CUR.kind === "w1" ? "World 1" : CUR.name);
   document.getElementById("bigmap-time").textContent = clockText(hostNow()) + " " + periodOf(hostNow());
 }
 document.getElementById("minimap").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); openBigMap(); });
@@ -2449,25 +2908,29 @@ bmCan.addEventListener("wheel", e => { e.preventDefault(); BM.k = clamp(BM.k * (
 
 // ================= Minimap (top-down, like Mine with friends) =================
 const mm = document.getElementById("minimap"), mmx = mm.getContext("2d");
-let mmBase = null;
+let mmBase = null, mmKey = "";
 function drawMinimap(now) {
-  if (!mmBase) {
-    mmBase = mkCanvas(MW * 2, MH * 2); const g = mmBase.getContext("2d");
+  if (!mmBase || mmKey !== mapKey) {
+    mmKey = mapKey; mmBase = mkCanvas(MW * 2, MH * 2); const g = mmBase.getContext("2d");
     const cols = { [T.GRASS]: "#5aa84a", [T.FLOWER]: "#5aa84a", [T.SAND]: "#e4cf94", [T.PATH]: "#b89a70", [T.DOCK]: "#a8743e", [T.BRIDGE]: "#a8743e", [T.TREE]: "#2e6a34", [T.BUILD]: "#c24a3a", [T.ROCK]: "#8a8a94",
-                   [T.POND]: "#62b8d8", [T.RIVER]: "#4a9ad4", [T.LAKE]: "#3a7ebe", [T.OCEAN]: "#22689c" };
+                   [T.POND]: "#62b8d8", [T.RIVER]: "#4a9ad4", [T.LAKE]: "#3a7ebe", [T.OCEAN]: "#22689c", [T.SKYW]: "#9ad2fa",
+                   [T.VOID]: "#a8d8ff", [T.CLOUD]: "#ffffff", [T.PORTAL]: "#b070ff", [T.STAIRS]: "#ffd860" };
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { g.fillStyle = cols[tileAt(x, y)] || "#000"; g.fillRect(x * 2, y * 2, 2, 2); }
   }
   mm.style.visibility = fishing.phase === "reel" ? "hidden" : "";
   mmx.imageSmoothingEnabled = false;
-  mmx.drawImage(mmBase, 0, 0, mm.width, mm.height);
-  const k = mm.width / MW;
+  const k = mm.width / Math.max(MW, MH), mox = (mm.width - MW * k) / 2, moy = (mm.height - MH * k) / 2;
+  mmx.fillStyle = CUR.kind === "w1" ? "#0e2a4a" : "#a8d8ff"; mmx.fillRect(0, 0, mm.width, mm.height);
+  mmx.save(); mmx.translate(mox, moy);
+  mmx.drawImage(mmBase, 0, 0, MW * k, MH * k);
   const cs = [[0, 0], [canvas.width, 0], [canvas.width, canvas.height], [0, canvas.height]].map(([px, py]) => screenToTile(px, py));
   mmx.strokeStyle = "rgba(255,255,255,.7)"; mmx.lineWidth = 1;
   mmx.beginPath(); cs.forEach((c, i) => i ? mmx.lineTo(c.x * k, c.y * k) : mmx.moveTo(c.x * k, c.y * k)); mmx.closePath(); mmx.stroke();
   for (const h of hotSpots(hostNow())) { mmx.fillStyle = Math.floor(now / 400) % 2 ? "#ffffff" : "#9ad0ff"; mmx.fillRect(h.x * k - 1, h.y * k - 1, 3, 3); }
   const dot = (i, c) => { const d = disp[i]; if (!d) return; mmx.fillStyle = "#08203a"; mmx.fillRect(d.x * k - 4, d.y * k - 4, 8, 8); mmx.fillStyle = c; mmx.fillRect(d.x * k - 3, d.y * k - 3, 6, 6); };
-  state.players.forEach((p, i) => { if (i !== net.seat && online(i)) dot(i, SEAT_COL[i]); });
+  state.players.forEach((p, i) => { if (i !== net.seat && online(i) && p.map === state.players[net.seat].map) dot(i, SEAT_COL[i]); });
   dot(net.seat, SEAT_COL[net.seat]);
+  mmx.restore();
 }
 
 // ================= Local play: moving, casting, hooking, reeling =================
@@ -2484,7 +2947,7 @@ function facing(p) {
   const [dx, dy] = DIRS[p.dir] || DIRS.down;
   const tx = Math.floor(p.x + dx * .8), ty = Math.floor(p.y + dy * .8 - (dy < 0 ? .1 : 0));
   const bi = inMap(tx, ty) ? buildAt[idx(tx, ty)] : -1;
-  if (bi >= 0 && dy < 0) return { kind: "building", b: BUILDINGS[bi] };
+  if (bi >= 0 && (dy < 0 || BUILDINGS[bi].anyside)) return { kind: "building", b: BUILDINGS[bi] };
   const water = castRay(p);
   if (water) return { kind: "water", ...water };
   return null;
@@ -2513,6 +2976,13 @@ function tickLocal(dt, now) {
   }
   me.anim = fishing.phase === "charge" ? 1 : 0;
   sendMove();
+  // stepping onto a sky door (or the open stairs) takes you through
+  { const t = tileAt(Math.floor(me.x), Math.floor(me.y));
+    if ((t === T.PORTAL || t === T.STAIRS) && inSky(me) && now > portalLock) {
+      portalLock = now + 1400;
+      if (t === T.PORTAL || skyCleared()) sendAction({ type: "portal", x: me.x, y: me.y });
+      else toast(`🔒 The stairs open when you catch ${state.sky.goal - state.sky.got} more fish in the 🌊 pool room — or the ⭐ ${CATCH[state.sky.special].name}.`, "", 3500);
+    } }
   // fishing state follows the host's copy of our line
   if (fishing.phase === "wait" && !L && now > fishing.pendingUntil) fishing.phase = "idle";
   if (fishing.phase === "idle" && L && !L.hooked) fishing.phase = "wait";
@@ -2540,19 +3010,20 @@ function tickLocal(dt, now) {
     lastNight = night;
   }
 }
-let lastHud = 0, lastNight = null;
+let lastHud = 0, lastNight = null, portalLock = 0;
 
 // ---- The Dredge-style dial: a needle sweeps round the ring. Tap while it's in a green catch zone; stay off the red snags.
 // Rarer fish: faster needle, smaller green, more (and drifting) red, and the needle can swing back the other way.
 const TAU = Math.PI * 2;
 const angDiff = (a, b) => ((a - b) % TAU + TAU * 1.5) % TAU - Math.PI;
 function startReel(L) {
-  const me = state.players[net.seat], f = CATCH[L.fish], r = f.rarity || 0, lvl = levelOf(me.xp), rod = RODS[me.rod];
+  const me = state.players[net.seat], f0 = CATCH[L.fish], r = f0.rarity || 0, lvl = levelOf(me.xp), rod = RODS[me.rod];
+  const f = { d: f0.d + (L.dBoost || 0) };          // Sky Island floors make every fish fight harder
   const R = {
     id: L.id, fish: L.fish, r, d: f.d, t: 0, rodPow: rod.power, ang: Math.random() * TAU, dir: 1,
     speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - rod.power * .05),          // radians per second
     green: clamp(.8 - r * .09 - f.d * .012 + rod.power * .06 + lvl * .01, .36, .9),  // width of a catch zone (radians)
-    need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0), got: 0, strain: 0, zones: [], fx: [],
+    need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0) + Math.floor((L.dBoost || 0) / 2), got: 0, strain: 0, zones: [], fx: [],
     flipAt: r >= 3 ? 1.6 + Math.random() * 2 : Infinity, pull: r >= 3 ? .03 * (r - 2) : r === 2 ? 0 : -.05,
   };
   const reds = Math.min(5, r + (f.d >= 5 ? 1 : 0));
@@ -2624,7 +3095,11 @@ function actDown() {
   }
   if (fishing.phase !== "idle") return;
   const f = facing(me);
-  if (f && f.kind === "building") return openMenu(f.b.id === "home" ? "journal" : f.b.id);
+  if (f && f.kind === "building") {
+    if (f.b.action === "outpost") return openOutpost();
+    if (f.b.action) return sendAction({ type: f.b.action, x: me.x, y: me.y });
+    return openMenu(f.b.id === "home" ? "journal" : f.b.id);
+  }
   if (f && f.kind === "water" && !L) { fishing.phase = "charge"; fishing.power = 0; fishing.pdir = 1; return; }
   if (!f) toast("Face the water to cast — or walk up to a shop.", "", 2200);
 }
@@ -2648,7 +3123,7 @@ function updateActLabel(me, hn) {
     else label = "⤴️<br>Reel in";
   } else {
     const f = facing(me);
-    if (f && f.kind === "building") label = f.b.act;
+    if (f && f.kind === "building") label = f.b.kind === "chest" && state.sky && state.sky.chests[CUR.room] ? "✅<br>Empty" : f.b.act;
     else if (f && f.kind === "water") label = `🎣<br><small style="font-size:.62em">${WATER_NAMES[tileAt(f.x, f.y)] || ""}</small>`;
     else if (!f) label = "✋<br>Use";
   }
@@ -2796,6 +3271,32 @@ function renderHud() {
   const bait = me.useBait !== "none" && BAITS[me.useBait] && me.bait[me.useBait] > 0 ? `${BAITS[me.useBait].icon} ×${me.bait[me.useBait]}` : "🪝 no bait";
   document.getElementById("hud-bait").textContent = bait;
   document.getElementById("hud-time").textContent = `${clockText(hostNow())} ${periodOf(hostNow())}`;
+  const sc = document.getElementById("hud-sky"), sk = state.sky;
+  sc.classList.toggle("hidden", !(sk && inSky(me)));
+  if (sk && inSky(me)) sc.textContent = sk.cleared ? `☁️ F${sk.floor} · ✅ stairs open` : `☁️ F${sk.floor} · 🐟 ${sk.got}/${sk.goal} · ⭐ ${CATCH[sk.special].name}`;
+}
+function renderDebug(title, note, body) {
+  const me = state.players[net.seat], opts = list => list.map(f => `<option value="${f.id}">${f.water ? WATER_LABEL[f.water[0]] + " · " : ""}${RARITY[f.rarity || 0].gem} ${f.name}</option>`).join("");
+  const B = (label, a, cls = "") => `<button class="${cls}" data-dbg='${JSON.stringify(a)}'>${label}</button>`;
+  title.textContent = "🛠️ Debug";
+  note.innerHTML = `Playtest tools — only in lobby <b>${DEBUG_CODE}</b>. You're in <b>${CUR.kind === "w1" ? "World 1" : CUR.name}</b>${state.sky ? ` · sky floor ${state.sky.floor} (${state.sky.got}/${state.sky.goal}${state.sky.cleared ? ", cleared" : ""})` : ""}.`;
+  body.innerHTML = `
+    <div class="opt-title">Travel</div>
+    <div class="setrow">${B("🌳 World 1", { what: "go", to: "w1" })}${B("☁️ Cloud Island", { what: "go", to: "cloud" })}
+      <span style="display:flex;gap:6px;align-items:center">${B("⛵ Sky floor", { what: "go", to: "sky" })}<input id="dbg-floor" class="field" type="number" min="1" max="99" value="${state.sky ? state.sky.floor : 1}" style="width:64px;padding:6px"></span>
+      ${B("🌊 Pool room", { what: "go", to: "pool" })}${B("✅ Clear floor", { what: "clear" })}${B("⭐ Catch special", { what: "special" })}</div>
+    <div class="opt-title">Gold</div>
+    <div class="setrow">${B("+1,000", { what: "gold", n: 1000 })}${B("+10,000", { what: "gold", n: 10000 })}${B("+100,000", { what: "gold", n: 100000 })}<input id="dbg-gold" class="field" type="number" value="500" style="width:100px;padding:6px">${B("Give", { what: "gold" })}</div>
+    <div class="opt-title">Fish</div>
+    <div class="setrow"><select id="dbg-fish" class="field" style="flex:1;min-width:180px;padding:6px">${opts(FISH)}${opts(JUNK)}</select>${B("Add to cooler", { what: "fish" })}${B("Add trophy", { what: "fish", big: true })}</div>
+    <div class="setrow">${B("📖 All World 1 fish (unlocks ferry)", { what: "dex", set: "w1" })}${B("📖 Every fish", { what: "dex", set: "all" })}${B("📖 Sky fish", { what: "dex", set: "sky" })}${B("🧹 Clear journal", { what: "cleardex" })}${B("🗑️ Empty cooler", { what: "empty" })}</div>
+    <div class="opt-title">Rods & level</div>
+    <div class="setrow">${RODS.map((r, i) => B(`${rodIcon(i)} ${r.name.replace(" Rod", "")}`, { what: "rod", i }, me.rod === i ? "btn-gold" : "")).join("")}</div>
+    <div class="setrow">Level <input id="dbg-level" class="field" type="number" min="1" max="10" value="${levelOf(me.xp)}" style="width:64px;padding:6px">${B("Set level", { what: "level" })}</div>
+    <div class="opt-title">Items</div>
+    <div class="setrow">${Object.entries(BAITS).map(([id, b]) => B(`+10 ${b.icon} ${b.name}`, { what: "bait", id })).join("")}${B("+3 ⏳ Hourglass", { what: "hourglass" })}${B("🧊 Biggest cooler", { what: "cooler" })}${B("⛴️ Unlock Cloud Island", { what: "unlock" })}</div>
+    <div class="opt-title">Time</div>
+    <div class="setrow">${B("☀️ Day", { what: "time", mode: "day" })}${B("🌙 Night", { what: "time", mode: "night" })}${B("🕐 Real clock", { what: "time" })}</div>`;
 }
 function renderSide() {
   if (!state) return;
@@ -2824,11 +3325,20 @@ function renderSide() {
 
 // ================= Menus: Tackle Shop, Fish Market, Cooler, Journal =================
 let menuKind = null, journalTab = "all";
-function openMenu(kind) { menuKind = kind; document.getElementById("menu").classList.remove("hidden"); document.body.classList.add("menu-open"); keys.clear(); renderMenu(); }
-function closeMenu() { menuKind = null; document.getElementById("menu").classList.add("hidden"); document.body.classList.remove("menu-open"); }
+function openMenu(kind) { if (!["market", "tackle", "journal"].includes(kind)) outpost = false; menuKind = kind; document.getElementById("menu").classList.remove("hidden"); document.body.classList.add("menu-open"); keys.clear(); renderMenu(); }
+let outpost = false;
+function openOutpost(kind = "market") { outpost = true; openMenu(kind); }
+function closeMenu() { outpost = false; menuKind = null; document.getElementById("menu").classList.add("hidden"); document.body.classList.remove("menu-open"); }
 function toggleMenu(kind) { menuKind === kind ? closeMenu() : openMenu(kind); }
 document.getElementById("menu-close").onclick = closeMenu;
 function renderMenu() {
+  renderMenuInner();
+  if (outpost && ["market", "tackle", "journal"].includes(menuKind)) {
+    document.getElementById("menu-title").textContent = "🏪 Sky Outpost";
+    document.getElementById("menu-body").insertAdjacentHTML("afterbegin", `<div class="tabs">${[["market", "🐟 Sell"], ["tackle", "🎣 Tackle"], ["journal", "📖 Journal"]].map(([k, t]) => `<button class="${menuKind === k ? "on" : ""}" data-otab="${k}">${t}</button>`).join("")}</div>`);
+  }
+}
+function renderMenuInner() {
   if (!menuKind || !state) return;
   const me = state.players[net.seat], gold = state.team.gold;
   const title = document.getElementById("menu-title"), note = document.getElementById("menu-note"), body = document.getElementById("menu-body");
@@ -2880,6 +3390,8 @@ function renderMenu() {
     });
     if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! The pond is easy; the ocean and deep water hold the big ones. Every water has its own fish.</small></div></div>`;
     body.innerHTML = h;
+  } else if (menuKind === "debug") {
+    renderDebug(title, note, body);
   } else if (menuKind === "settings") {
     const p = readJSON(PREFS_KEY) || {}, side = p.actSide === "left" ? "left" : "right", clear = p.joyClear ?? 10;
     title.textContent = "⚙️ Settings";
@@ -2892,14 +3404,17 @@ function renderMenu() {
       <div class="opt-title">Zoom</div>
       <div class="setrow choices">${ZOOMS.map((z, i) => `<button class="style ${zoom === i ? "on" : ""}" data-set-zoom="${i}">${z.icon} ${["Normal", "Wide", "Close"][i]}</button>`).join("")}</div>
       <div class="opt-title">Lobby</div>
+      ${isDebug() ? `<div class="opt-title">Playtest</div><div class="setrow"><button class="btn-gold" data-set="debug">🛠️ Debug menu</button></div>` : ""}
       <div class="setrow"><button data-set="invite">🔗 Copy invite link</button><button data-set="stats">📊 Stats & team</button><button data-set="journal">📖 Journal</button><button data-set="leave">🚪 Leave lobby</button></div>
       <div class="keys" style="margin-top:4px">Touch anywhere on the water or land to bring up the joystick; it stays where you touched until you lift your finger. While a fish bites or you're on the dial, a tap anywhere works too.</div>`;
   } else if (menuKind === "journal") {
     title.textContent = "📖 Fish journal";
     const seen = FISH.filter(f => state.dex[f.id]).length;
     const nightNow = isNight(hostNow());
-    note.innerHTML = `<b>${clockText(hostNow())} · ${periodOf(hostNow())}</b> — ${(timeWarp(hostNow()) ? `⏳ an Hourglass is holding ${nightNow ? "🌙 night" : "☀️ day"} for ${warpLeft(hostNow())} more min` : nightNow ? "🌙 night fish are biting (until 6 am)" : "☀️ day fish are biting (until 6 pm)")}. Bubbling spots move every half hour.<br>${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}`;
-    const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Ocean"]];
+    const have = W1_REQUIRED.filter(f => state.dex[f.id]).length;
+    const world2 = cloudUnlocked(state) ? `☁️ Cloud Island open · best Sky floor <b>${state.skyBest || 0}</b>` : `⛴️ Cloud Island ferry: catch every non-legendary fish — <b>${have}/${W1_REQUIRED.length}</b>`;
+    note.innerHTML = `${world2}<br><b>${clockText(hostNow())} · ${periodOf(hostNow())}</b> — ${(timeWarp(hostNow()) ? `⏳ an Hourglass is holding ${nightNow ? "🌙 night" : "☀️ day"} for ${warpLeft(hostNow())} more min` : nightNow ? "🌙 night fish are biting (until 6 am)" : "☀️ day fish are biting (until 6 pm)")}. Bubbling spots move every half hour.<br>${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}`;
+    const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Ocean"], ["sky", "☁️ Sky"]];
     let h = `<div class="tabs">${tabs.map(([k, t]) => `<button class="${journalTab === k ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</div><div class="dex">`;
     for (const f of FISH.filter(f => journalTab === "all" || f.water.includes(journalTab))) {
       const d = state.dex[f.id];
@@ -2907,7 +3422,7 @@ function renderMenu() {
       const rr = RARITY[f.rarity];
       h += `<div class="cell ${d ? "" : "unseen"}" style="--rc:${rr.col}">${fishIcon(f.id)}<b>${d ? f.name : "???"}</b>
         <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>
-        <div style="color:var(--muted)">${d ? where : `Lv ${f.lvl}+ · ${f.water.map(w => WATER_LABEL[w]).join(", ")}`}</div>
+        <div style="color:var(--muted)">${d ? where : f.water[0] === "sky" ? "Sky Island floors" : `Lv ${f.lvl}+ · ${f.water.map(w => WATER_LABEL[w]).join(", ")}`}</div>
         ${f.time ? `<div style="font-size:.7rem;color:${f.time === "night" ? "#b8c0ff" : "#ffe08a"}">${f.time === "night" ? "🌙 Night only" : "☀️ Day only"}${(f.time === "night") !== nightNow ? " · not now" : " · biting now"}</div>` : `<div style="font-size:.7rem;color:var(--muted)">🕐 Any time</div>`}
         ${d ? `<div>×${d.n} · 🏆 ${d.best} kg</div>` : ""}</div>`;
     }
@@ -2916,6 +3431,8 @@ function renderMenu() {
 }
 document.getElementById("menu-body").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || b.disabled) return;
+  if (b.dataset.otab) { menuKind = b.dataset.otab; renderMenu(); return; }
+  if (b.dataset.dbg) { const a = JSON.parse(b.dataset.dbg); if (a.what === "go" && a.to === "sky") a.floor = +document.getElementById("dbg-floor").value || 1; if (a.what === "level") a.n = +document.getElementById("dbg-level").value || 1; if (a.what === "fish") a.id = document.getElementById("dbg-fish").value; if (a.what === "gold" && a.n == null) a.n = +document.getElementById("dbg-gold").value || 0; sendAction({ type: "debug", ...a }); return; }
   if (b.dataset.buy) sendAction({ type: "buy", what: b.dataset.buy, i: +b.dataset.i, id: b.dataset.id });
   else if (b.dataset.sell) sendAction({ type: "sell", i: +b.dataset.sell });
   else if ("sellall" in b.dataset) sendAction({ type: "sell", all: true });
@@ -2928,6 +3445,7 @@ document.getElementById("menu-body").addEventListener("click", e => {
   else if (b.dataset.set === "invite") document.getElementById("invite").click();
   else if (b.dataset.set === "stats") { closeMenu(); document.getElementById("side").classList.add("open"); }
   else if (b.dataset.set === "journal") openMenu("journal");
+  else if (b.dataset.set === "debug") openMenu("debug");
   else if (b.dataset.set === "leave") document.getElementById("leave").click();
 });
 
@@ -2946,6 +3464,7 @@ function enterGame() {
   fishing.phase = "idle"; fishing.reel = null;
   document.getElementById("chat-log").innerHTML = "";
   setConnected(net.connected);
+  document.getElementById("debug-btn").classList.toggle("hidden", !isDebug());
   applyFit(); renderHud(); renderSide();
   history.replaceState(null, "", location.pathname);
   toast(net.isHost ? `Lobby ${net.code} is open! Share the code with your friend.` : "Joined! Head to the water and cast a line.", "ok", 5000);
@@ -2969,6 +3488,7 @@ document.getElementById("players-box").addEventListener("click", e => {
   save(); broadcast({ text: `${name}'s seat is free for a new angler.`, ok: true, neutral: true });
 });
 document.getElementById("settings-btn").onclick = () => toggleMenu("settings");
+document.getElementById("debug-btn").onclick = () => toggleMenu("debug");
 document.getElementById("menu-body").addEventListener("input", e => {
   if (e.target.id !== "joy-clear") return;
   const v = +e.target.value; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), joyClear: v }); applyControlPrefs();
