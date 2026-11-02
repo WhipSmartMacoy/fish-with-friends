@@ -123,7 +123,10 @@
   .dex .cell .em { font-size: 1.8rem; height: 40px; line-height: 40px; }
   .dex .cell.unseen img, .dex .cell.unseen .em { filter: brightness(0) opacity(.45); }
   .dex .cell b { display: block; font-size: .8rem; }
-  .dex .cell.leg { box-shadow: inset 0 0 0 2px #ffd86088; }
+  .dex .cell { box-shadow: inset 0 0 0 2px var(--rc, transparent); }
+  .dex .cell.unseen { --rc: transparent !important; }
+  .rtag { display: inline-block; font-size: .68rem; font-weight: bold; padding: 0 6px; border-radius: 6px; background: #0008; color: var(--rc); border: 1px solid var(--rc); text-shadow: none; vertical-align: middle; }
+  .mrow.rar { box-shadow: inset 3px 0 0 var(--rc); }
   .chat { grid-area: chat; display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 6px; min-height: 0; }
   .chat-log { font-size: .88rem; max-height: 72px; overflow-y: auto; min-height: 20px; }
   .chat-log .who0 { color: var(--p1); } .chat-log .who1 { color: var(--p2); }
@@ -762,7 +765,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1000";
+const BUILD = "2026.11.02-1130";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1019,6 +1022,17 @@ const JUNK = [
   { id: "chest",   name: "Treasure Chest", w: .7, price: 0, kg: [3, 9], shape: "🧰", junk: true, treasure: true },
 ];
 const CATCH = Object.fromEntries([...FISH, ...JUNK].map(f => [f.id, f]));
+// Rarity tiers: how often a fish turns up decides its tier (legendaries are hand-picked)
+const RARITY = [
+  { name: "Common",    col: "#e0e4ea", gem: "" },
+  { name: "Uncommon",  col: "#7ae07a", gem: "◆" },
+  { name: "Rare",      col: "#5ab4ff", gem: "◆◆" },
+  { name: "Epic",      col: "#c88aff", gem: "◆◆◆" },
+  { name: "Legendary", col: "#ffb030", gem: "★" },
+];
+for (const f of FISH) f.rarity = f.legend ? 4 : f.w >= 24 ? 0 : f.w >= 12 ? 1 : f.w >= 7 ? 2 : 3;
+for (const f of JUNK) f.rarity = f.treasure ? 3 : 0;
+const rarityOf = id => RARITY[(CATCH[id] || {}).rarity || 0];
 const RODS = [
   { name: "Twig Rod",       reach: 3, price: 0,    power: 0, icon: "🪵" },
   { name: "Bamboo Rod",     reach: 4, price: 200,  power: 1, icon: "🎋" },
@@ -1100,7 +1114,7 @@ function rollCatch(p, tx, ty, now) {
   const hot = nearHot(tx, ty, now), rod = RODS[p.rod];
   let rare = 1 + rod.power * .15 + (hot ? .6 : 0) + (bait === "lure" ? 1 : 0) + (bait === "glow" && (night || deep) ? 1.2 : 0);
   const pool = FISH.filter(f => f.water.includes(kind) && f.lvl <= lvl && (!f.time || f.time === (night ? "night" : "day")) && (!f.deep || deep))
-    .map(f => ({ f, w: f.w <= 7 ? f.w * rare : f.w }));
+    .map(f => ({ f, w: f.rarity >= 2 ? f.w * rare : f.rarity === 1 ? f.w * (1 + (rare - 1) * .4) : f.w }));
   pool.push(...JUNK.map(f => ({ f, w: f.treasure ? f.w * (1 + rod.power * .2) : f.w * Math.max(.3, 1 - rod.power * .15 - (bait ? .3 : 0)) })));
   let roll = Math.random() * pool.reduce((a, o) => a + o.w, 0), pick = pool[0].f;
   for (const o of pool) { roll -= o.w; if (roll <= 0) { pick = o.f; break; } }
@@ -1214,13 +1228,13 @@ function landCatch(seat, ok) {
     d.n++; if (record) { d.best = L.kg; d.by = p.name; }
     if (f.legend) state.team.legends++;
     if (!p.best || L.kg * f.price > p.best.score) p.best = { id: f.id, kg: L.kg, score: L.kg * f.price };
-    const sz = sizeLabel(f, L.kg);
-    let text = `${p.name} caught ${f.legend ? "the LEGENDARY " : "a "}${sz ? sz.toLowerCase() + " " : ""}${f.name} (${L.kg} kg)!`;
+    const sz = sizeLabel(f, L.kg), rr = RARITY[f.rarity];
+    let text = `${p.name} caught ${f.legend ? "the LEGENDARY " : f.rarity ? `${f.rarity === 1 ? "an" : "a"} ${rr.gem} ${rr.name.toUpperCase()} ` : "a "}${sz ? sz.toLowerCase() + " " : ""}${f.name} (${L.kg} kg)!`;
     if (first) text += " 📖 New in the journal!";
     else if (record) text += " 🏆 New record!";
     if (up) text += ` 🎣 Fishing level ${up}!`;
     addLog(text, true);
-    return { text, ok: true, seat, sfx: f.legend ? "legend" : "catch", fx: { x: L.x, y: L.y, text: `+${xp} xp`, color: "#9ad0ff" }, petHop: true, levelUp: up, caughtId: f.id };
+    return { text, ok: true, seat, sfx: f.rarity >= 3 ? "legend" : f.rarity === 2 ? "rare" : "catch", fx: { x: L.x, y: L.y, text: f.rarity ? `${rr.name}! +${xp} xp` : `+${xp} xp`, color: rr.col }, petHop: true, levelUp: up, caughtId: f.id, rarity: f.rarity };
   }
   return { text: `${p.name} reeled in… ${f.shape} ${f.name.toLowerCase()}. Ew.`, ok: true, seat, neutral: true, fx: { x: L.x, y: L.y, text: f.shape, color: "#ffffff" } };
 }
@@ -1499,139 +1513,186 @@ function fishIcon(id, cls = "") {
   return a ? `<img class="${cls}" src="${a.url}" alt="">` : `<span class="em ${cls}">${f ? f.shape : "?"}</span>`;
 }
 
-// ================= World background, cached per 15×15 chunk =================
-const CPX = CH * TS * K;    // chunk canvas size in device pixels (960 = Grass BG at 1:1)
+// ================= Isometric view (same projection as Mine with friends) =================
+// The world is still a grid of tiles; it's just drawn turned 45° and tilted (2:1 diamonds).
+const IW = 72, IH = 36, IZ = 30;                 // diamond width / height, and one unit of height (world units)
+const WZ = -0.22;                                // water sits a little below the banks
+const isoX = (x, y) => (x - y) * IW / 2, isoY = (x, y, z = 0) => (x + y) * IH / 2 - z * IZ;
+const iso = (x, y, z = 0) => ({ x: isoX(x, y), y: isoY(x, y, z) });
+const GS = 1.5;                                  // ground canvases: device px per world unit
+function diamond(x, y, z = 0) { return [iso(x, y, z), iso(x + 1, y, z), iso(x + 1, y + 1, z), iso(x, y + 1, z)]; }
+function polyFill(g, pts, fill, stroke, lw = 1) {
+  g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+}
+// draw a texture region onto the parallelogram N + u·U + v·V (u, v from 0 to 1)
+function texQuad(g, img, sx, sy, sw, sh, N, U, V) {
+  g.save(); g.beginPath(); g.moveTo(N.x, N.y); g.lineTo(N.x + U.x, N.y + U.y); g.lineTo(N.x + U.x + V.x, N.y + U.y + V.y); g.lineTo(N.x + V.x, N.y + V.y); g.closePath(); g.clip();
+  g.transform(U.x / sw, U.y / sw, V.x / sh, V.y / sh, N.x, N.y);
+  g.imageSmoothingEnabled = true; g.drawImage(img, sx, sy, sw, sh, -0.6, -0.6, sw + 1.2, sh + 1.2);
+  g.restore();
+}
+function texTop(g, img, src, x, y, z = 0) { texQuad(g, img, ...src, iso(x, y, z), { x: IW / 2, y: IH / 2 }, { x: -IW / 2, y: IH / 2 }); }
+// a block column at tile (x, y) from height z0 up to z: its two visible sides plus a coloured top
+function column(g, x, y, z, o = {}) {
+  const z0 = o.z0 ?? 0, dz = (z - z0) * IZ, A = iso(x, y + 1, z), B = iso(x + 1, y + 1, z), C = iso(x + 1, y, z);
+  if (dz > 0) {
+    polyFill(g, [A, B, { x: B.x, y: B.y + dz }, { x: A.x, y: A.y + dz }], o.sideL || "#7a5232");
+    polyFill(g, [B, C, { x: C.x, y: C.y + dz }, { x: B.x, y: B.y + dz }], o.sideR || "#5a3a22");
+  }
+  if (o.color) polyFill(g, diamond(x, y, z), o.color);
+}
+function isoCanvas(x0, y0, w, h, extraTop = 0.6, extraBot = 0.6) {   // canvas whose drawing space is global iso units
+  const ox = isoX(x0, y0 + h), oy = isoY(x0, y0) - extraTop * IZ;
+  const cw = (w + h) * IW / 2, chh = (w + h) * IH / 2 + (extraTop + extraBot) * IZ;
+  const c = mkCanvas(Math.ceil(cw * GS), Math.ceil(chh * GS)), g = c.getContext("2d");
+  g.setTransform(GS, 0, 0, GS, -ox * GS, -oy * GS);
+  return { c, g, ox, oy, cw, chh };
+}
 const WATER_COL = {
   10: ["#62b8d8", "#4ea4cc", "#4294c0"],
   11: ["#5ab0e0", "#4a9ad4", "#3c88c6"],
   12: ["#62b4e2", "#4c98d2", "#3a7ebe", "#2e68aa", "#26579a"],
   13: ["#52bcd2", "#3ea0c2", "#2e84b2", "#22689c", "#1a5286"],
 };
-function chunkBg(cx, cy) {
+const waterKindAt = (x, y) => { const t = tileAt(x, y); return isWater(t) ? t : (t === T.DOCK || t === T.BRIDGE) ? under[idx(x, y)] : 0; };
+const grassSrc = (x, y) => { const lx = ((x % CH) + CH) % CH, ly = ((y % CH) + CH) % CH; return [lx * 64, ly * 64, 64, 64]; };
+// ---- Ground, pre-drawn once per 15×15 chunk (the size of one Grass BG)
+function isoChunk(cx, cy) {
   const key = cx + "," + cy;
-  if (bgCache.has(key)) { const c = bgCache.get(key); bgCache.delete(key); bgCache.set(key, c); return c; }
-  const c = mkCanvas(CPX, CPX), g = c.getContext("2d");
-  g.setTransform(K, 0, 0, K, 0, 0);
-  const ox = cx * CH, oy = cy * CH, S = CH * TS;
-  if (TEX.grass) {   // mirror every other chunk so the texture's edges always line up seamlessly
-    g.save(); g.translate(cx % 2 ? S : 0, cy % 2 ? S : 0); g.scale(cx % 2 ? -1 : 1, cy % 2 ? -1 : 1);
-    g.drawImage(TEX.grass, 0, 0, S, S); g.restore();
-  } else { g.fillStyle = "#5aa84a"; g.fillRect(0, 0, S, S); }
-  const fr = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
-  for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
-    const gx = ox + x, gy = oy + y, t = tileAt(gx, gy), X = x * TS, Y = y * TS;
-    const waterKind = isWater(t) ? t : (t === T.DOCK || t === T.BRIDGE) ? under[idx(gx, gy)] : 0;
-    if (waterKind) {
-      const cols = WATER_COL[waterKind], d = depthAt(gx, gy) || 1;
-      fr(X, Y, TS, TS, cols[Math.min(d - 1, cols.length - 1)]);
-      for (let i = 0; i < 2; i++) fr(X + Math.floor(hash2(gx, gy, 10 + i) * 34), Y + 6 + Math.floor(hash2(gx, gy, 20 + i) * 36), 10, 2, "rgba(255,255,255,.12)");
-      const shore = (nx, ny) => { const n = tileAt(nx, ny); return !isWater(n) && n !== T.DOCK && n !== T.BRIDGE; };
-      if (shore(gx, gy - 1)) { fr(X, Y, TS, 5, "rgba(40,60,30,.35)"); fr(X, Y + 5, TS, 3, "rgba(230,248,255,.65)"); }
-      if (shore(gx, gy + 1)) fr(X, Y + TS - 4, TS, 4, "rgba(230,248,255,.55)");
-      if (shore(gx - 1, gy)) fr(X, Y, 4, TS, "rgba(230,248,255,.6)");
-      if (shore(gx + 1, gy)) fr(X + TS - 4, Y, 4, TS, "rgba(230,248,255,.5)");
-    }
-    if (t === T.SAND) {
-      fr(X, Y, TS, TS, "#e4cf94");
-      for (let i = 0; i < 6; i++) fr(X + Math.floor(hash2(gx, gy, 30 + i) * 44), Y + Math.floor(hash2(gx, gy, 40 + i) * 44), 3, 3, i % 2 ? "#d4bc7c" : "#f2e2b0");
-      if (waterAt(gx + 1, gy)) fr(X + TS - 6, Y, 6, TS, "#c8b076");
-      if (tileAt(gx - 1, gy) === T.GRASS || tileAt(gx - 1, gy) === T.TREE) fr(X, Y, 3, TS, "rgba(60,100,40,.35)");
-    } else if (t === T.PATH) {
-      if (TEX.brick) g.drawImage(TEX.broken && hash2(gx, gy, 41) < .1 ? TEX.broken : TEX.brick, X, Y, TS, TS);
-      else fr(X, Y, TS, TS, "#b89a70");
-      const edge = "rgba(20,30,10,0.35)", isP = (a, b) => [T.PATH, T.BRIDGE, T.DOCK, T.BUILD].includes(tileAt(a, b));
-      if (!isP(gx, gy - 1)) fr(X, Y, TS, 3, edge);
-      if (!isP(gx, gy + 1)) fr(X, Y + TS - 3, TS, 3, edge);
-      if (!isP(gx - 1, gy)) fr(X, Y, 3, TS, edge);
-      if (!isP(gx + 1, gy)) fr(X + TS - 3, Y, 3, TS, edge);
-    } else if (t === T.DOCK || t === T.BRIDGE) {
-      const across = [T.DOCK, T.BRIDGE, T.PATH, T.SAND].includes(tileAt(gx - 1, gy)) || [T.DOCK, T.BRIDGE].includes(tileAt(gx + 1, gy));
-      fr(X + (across ? 0 : 4), Y + (across ? 4 : 0), across ? TS : TS - 8, across ? TS - 8 : TS, "#b07a44");
-      g.fillStyle = "#7a4a24";
-      for (let k = 0; k < TS; k += 12) across ? g.fillRect(X + k, Y + 4, 2, TS - 8) : g.fillRect(X + 4, Y + k, TS - 8, 2);
-      g.fillStyle = "#c8945a";
-      for (let k = 2; k < TS; k += 12) across ? g.fillRect(X + k, Y + 5, 3, TS - 10) : g.fillRect(X + 5, Y + k, TS - 10, 3);
-      fr(X + (across ? 0 : 2), Y + (across ? TS - 6 : 0), across ? TS : 4, across ? 4 : TS, "#5a3418");
-      if (t === T.BRIDGE) { fr(X, Y + 2, TS, 4, "#6a4024"); fr(X, Y + TS - 6, TS, 4, "#6a4024"); }
-      else if (hash2(gx, gy, 5) < 2) { fr(X + 2, Y + TS - 10, 6, 10, "#4a2c18"); fr(X + TS - 8, Y + TS - 10, 6, 10, "#4a2c18"); }
-    } else if (t === T.FLOWER) {
-      const cols = ["#ffe070", "#ff9ab8", "#ffffff", "#b89aff"];
-      for (let i = 0; i < 4; i++) {
-        const fx = X + 6 + Math.floor(hash2(gx, gy, 60 + i) * 34), fy = Y + 6 + Math.floor(hash2(gx, gy, 70 + i) * 34);
-        fr(fx, fy + 3, 2, 4, "#2e7a34"); fr(fx - 2, fy, 6, 4, cols[(i + Math.floor(hash2(gx, gy, 80) * 4)) % 4]); fr(fx, fy + 1, 2, 2, "#ffcc40");
-      }
-    } else if (t === T.BUILD) {
-      fr(X, Y, TS, TS, "rgba(0,0,0,.15)");
-    }
+  if (bgCache.has(key)) { const v = bgCache.get(key); bgCache.delete(key); bgCache.set(key, v); return v; }
+  const x0 = cx * CH, y0 = cy * CH, R = isoCanvas(x0, y0, CH, CH), g = R.g, G = TEX.grass;
+  if (G) {   // the whole chunk's grass in one go; every other chunk is mirrored so the texture's edges always line up
+    let N = iso(x0, y0), U = { x: CH * IW / 2, y: CH * IH / 2 }, V = { x: -CH * IW / 2, y: CH * IH / 2 };
+    if (cx % 2) { N = { x: N.x + U.x, y: N.y + U.y }; U = { x: -U.x, y: -U.y }; }
+    if (cy % 2) { N = { x: N.x + V.x, y: N.y + V.y }; V = { x: -V.x, y: -V.y }; }
+    texQuad(g, G, 0, 0, G.width, G.height, N, U, V);
   }
-  bgCache.set(key, c);
-  while (bgCache.size > 16) bgCache.delete(bgCache.keys().next().value);
-  return c;
+  // water just behind this chunk's back edges sits low, so it pokes into this chunk: draw that sliver too
+  for (let k = -1; k < CH; k++) for (const [x, y] of k < 0 ? [[x0 - 1, y0 - 1]] : [[x0 - 1, y0 + k], [x0 + k, y0 - 1]]) {
+    const wk = waterKindAt(x, y); if (!wk) continue;
+    const cols = WATER_COL[wk]; polyFill(g, diamond(x, y, WZ), cols[Math.min((depthAt(x, y) || 1) - 1, cols.length - 1)]);
+  }
+  const grassTop = (x, y) => {
+    if (!G) return polyFill(g, diamond(x, y), ["#6cbf4f", "#66b84a", "#72c455"][Math.floor(hash2(x, y, 3) * 3)]);
+    const src = grassSrc(x, y), mx = ((Math.floor(x / CH) % 2) + 2) % 2, my = ((Math.floor(y / CH) % 2) + 2) % 2;
+    if (mx) src[0] = (CH - 1) * 64 - src[0]; if (my) src[1] = (CH - 1) * 64 - src[1];
+    const N = iso(x + mx, y + my), U = { x: (mx ? -1 : 1) * IW / 2, y: (mx ? -1 : 1) * IH / 2 }, V = { x: (my ? 1 : -1) * IW / 2, y: (my ? -1 : 1) * IH / 2 };
+    texQuad(g, G, ...src, N, U, V);
+  };
+  for (let sum = 0; sum <= 2 * CH - 2; sum++) for (let lx = 0; lx < CH; lx++) {
+    const ly = sum - lx; if (ly < 0 || ly >= CH) continue;
+    const x = x0 + lx, y = y0 + ly, t = tileAt(x, y), wk = waterKindAt(x, y);
+    if (wk) {
+      const cols = WATER_COL[wk], d = depthAt(x, y) || 1;
+      polyFill(g, diamond(x, y, WZ), cols[Math.min(d - 1, cols.length - 1)]);
+      g.strokeStyle = "rgba(220,245,255,.35)"; g.lineWidth = 1.2;
+      for (let k = 0; k < 2; k++) { const p = iso(x + .25 + hash2(x, y, 10 + k) * .5, y + .25 + hash2(x, y, 20 + k) * .5, WZ); g.beginPath(); g.moveTo(p.x - 6, p.y); g.lineTo(p.x + 6, p.y); g.stroke(); }
+      g.strokeStyle = "rgba(235,250,255,.75)"; g.lineWidth = 2;                // foam where the water meets a bank behind it
+      if (!waterKindAt(x - 1, y)) { const a = iso(x, y, WZ), b = iso(x, y + 1, WZ); g.beginPath(); g.moveTo(a.x, a.y + 1.5); g.lineTo(b.x, b.y + 1.5); g.stroke(); }
+      if (!waterKindAt(x, y - 1)) { const a = iso(x, y, WZ), b = iso(x + 1, y, WZ); g.beginPath(); g.moveTo(a.x, a.y + 1.5); g.lineTo(b.x, b.y + 1.5); g.stroke(); }
+      if (t === T.DOCK || t === T.BRIDGE) {                                  // wooden deck on posts
+        const across = [T.DOCK, T.BRIDGE, T.PATH, T.SAND].includes(tileAt(x - 1, y)) || [T.DOCK, T.BRIDGE].includes(tileAt(x + 1, y));
+        for (const [px, py] of [[.1, .9], [.9, .9]]) { const q = across ? iso(x + px, y + .92, WZ) : iso(x + .92, y + 1 - px, WZ); g.fillStyle = "#4a2c18"; g.fillRect(q.x - 2, q.y - 10, 4, 10); }
+        column(g, x, y, .12, { z0: .02, sideL: "#7a4a24", sideR: "#5a3418", color: "#b07a44" });
+        g.strokeStyle = "#7a4a24"; g.lineWidth = 1.4;
+        for (let k = 1; k < 4; k++) { const a = across ? iso(x + k / 4, y, .12) : iso(x, y + k / 4, .12), b = across ? iso(x + k / 4, y + 1, .12) : iso(x + 1, y + k / 4, .12); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+        if (t === T.BRIDGE) for (const e of [0.04, 0.96]) { const a = across ? iso(x, y + e, .12) : iso(x + e, y, .12), b = across ? iso(x + 1, y + e, .12) : iso(x + e, y + 1, .12); g.strokeStyle = "#5a3418"; g.lineWidth = 3; g.beginPath(); g.moveTo(a.x, a.y - 9); g.lineTo(b.x, b.y - 9); g.stroke(); }
+      }
+      continue;
+    }
+    const lip = waterKindAt(x + 1, y) || waterKindAt(x, y + 1);
+    if (lip) column(g, x, y, 0, { z0: WZ - .05, sideL: t === T.SAND ? "#c8a86a" : "#7a5a32", sideR: t === T.SAND ? "#a88a50" : "#5a4022" });   // a little bank down to the water
+    if (t === T.PATH) {
+      if (TEX.brick) texTop(g, TEX.broken && hash2(x, y, 41) < .1 ? TEX.broken : TEX.brick, [0, 0, 64, 64], x, y);
+      else polyFill(g, diamond(x, y), "#b89a70");
+    } else if (t === T.SAND) {
+      polyFill(g, diamond(x, y), "#e4cf94");
+      for (let k = 0; k < 6; k++) { const p = iso(x + .15 + hash2(x, y, 30 + k) * .7, y + .15 + hash2(x, y, 40 + k) * .7); g.fillStyle = k % 2 ? "#d4bc7c" : "#f2e2b0"; g.fillRect(p.x - 1.5, p.y - 1, 3, 2); }
+    } else if (!lip && (waterKindAt(x - 1, y) || waterKindAt(x, y - 1) || waterKindAt(x - 1, y - 1))) grassTop(x, y);   // keep water behind from spilling onto the bank
+    if (t === T.FLOWER) {
+      const fc = ["#ffffff", "#ffe070", "#ff8ab0", "#b0a0ff"][Math.floor(hash2(x, y, 5) * 4)];
+      for (let k = 0; k < 3; k++) { const p = iso(x + .25 + hash2(x, y, 30 + k) * .5, y + .25 + hash2(x, y, 40 + k) * .5); g.fillStyle = fc; g.beginPath(); g.arc(p.x, p.y, 2.4, 0, 7); g.fill(); g.fillStyle = "#ffb030"; g.fillRect(p.x - .8, p.y - .8, 1.6, 1.6); }
+    } else if (t === T.BUILD) polyFill(g, diamond(x, y), "rgba(40,30,20,.25)");
+  }
+  bgCache.set(key, R);
+  while (bgCache.size > 12) bgCache.delete(bgCache.keys().next().value);
+  return R;
 }
+const drawIsoCanvas = R => {     // copy only the part of the ground that's on screen
+  const x0 = Math.max(R.ox, cam.x0), y0 = Math.max(R.oy, cam.y0), x1 = Math.min(R.ox + R.cw, cam.x0 + cam.vw), y1 = Math.min(R.oy + R.chh, cam.y0 + cam.vh);
+  if (x1 <= x0 || y1 <= y0) return;
+  ctx.drawImage(R.c, (x0 - R.ox) * GS, (y0 - R.oy) * GS, (x1 - x0) * GS, (y1 - y0) * GS, x0, y0, x1 - x0, y1 - y0);
+};
 
 // ================= Camera & scaling =================
-// From Mine with friends: the canvas is sized to the stage in device pixels (capped at 2×), the world is scaled so a
-// fixed number of tiles fits across the narrower side, and label text scales up so it never drops below ~12 css px.
+// From Mine with friends: the canvas is sized to the stage in device pixels (capped at 2×), a fixed number of
+// diamonds fits across the narrower side, and label text scales up so it never drops below ~12 css px.
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const ZOOMS = [{ across: 7, icon: "🗺️" }, { across: 10, icon: "🔭" }, { across: 5.2, icon: "🔍" }];
+const ZOOMS = [{ across: 6.4, icon: "🗺️" }, { across: 9.5, icon: "🔭" }, { across: 4.8, icon: "🔍" }];
 let zoom = (readJSON(PREFS_KEY) || {}).zoom || 0;
+if (!ZOOMS[zoom]) zoom = 0;
 let cam = { x0: 0, y0: 0, vw: 1, vh: 1, s: 1, dpr: 1 };
 let ui = 1;
-function updateView(me) {
+function updateView(d) {
   const stage = document.getElementById("stage");
   const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1, dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cw = Math.round(sw * dpr), ch = Math.round(sh * dpr);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
-  const s = Math.min(cw, ch) / (ZOOMS[zoom].across * TS);
+  const s = Math.min(cw, ch) / (ZOOMS[zoom].across * IW);
   cam.s = s; cam.dpr = dpr; cam.vw = cw / s; cam.vh = ch / s;
-  const cx = clamp(me.x * TS, cam.vw / 2, MW * TS - cam.vw / 2), cy = clamp((me.y - .4) * TS, cam.vh / 2, MH * TS - cam.vh / 2);
-  cam.x0 = cx - cam.vw / 2; cam.y0 = cy - cam.vh / 2;
+  cam.x0 = isoX(d.x, d.y) - cam.vw / 2; cam.y0 = isoY(d.x, d.y) - 28 - cam.vh / 2;
   ui = clamp(12 / (13 * (s / dpr)), 1, 2.4);      // aim for ≥12 css px text
 }
-const toScreen = (wx, wy) => [(wx - cam.x0) * cam.s / cam.dpr, (wy - cam.y0) * cam.s / cam.dpr];
+const toScreen = (X, Y) => [(X - cam.x0) * cam.s / cam.dpr, (Y - cam.y0) * cam.s / cam.dpr];
+function screenToTile(px, py) { const X = cam.x0 + px / cam.s, Y = cam.y0 + py / cam.s; return { x: Y / IH + X / IW, y: Y / IH - X / IW }; }
+const gridToScreenDir = dir => { const [dx, dy] = DIRS[dir] || DIRS.down, sx = dx - dy, sy = (dx + dy) / 2, l = Math.hypot(sx, sy) || 1; return [sx / l, sy / l]; };
 
 // ================= Players, pets, lines =================
-const disp = [null, null];        // smoothed positions for drawing the other player
+const disp = [null, null];        // smoothed positions for drawing (grid coordinates, feet)
 const walkAnim = [0, 0];
 function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].look, seat)); }
 function poseFor(seat, now) {
   const p = state.players[seat], d = disp[seat], spr = playerSprites(seat), set = spr[p.dir] || spr.down;
   const L = p.line;
-  if (seat === net.seat && fishing.phase === "charge") return set.raise;
+  if ((seat === net.seat && fishing.phase === "charge") || (seat !== net.seat && p.anim === 1)) return set.raise;
   if (L && now - showAt(L) < 260) return set.strike;
   if (d.moving) return set.walk[Math.floor(walkAnim[seat] * 7) % 4];
   return set.idle[Math.floor(now / 700) % 2];
 }
-function rodTip(seat) {   // where the rod tip sits (world units), for each facing
-  const p = state.players[seat], d = disp[seat], x = d.x * TS, y = d.y * TS;
-  const o = { down: [14, -30], up: [-12, -62], left: [-30, -44], right: [30, -44] }[p.dir] || [14, -30];
-  if (seat === net.seat && fishing.phase === "charge") return [x - o[0] * .4, y - 70];
-  return [x + o[0], y + o[1]];
+const feet = i => iso(disp[i].x, disp[i].y);
+function rodHand(seat) { const F = feet(seat), [sx] = gridToScreenDir(state.players[seat].dir); return { x: F.x + sx * 9, y: F.y - 27 }; }
+function rodTip(seat) {
+  const H = rodHand(seat), [sx, sy] = gridToScreenDir(state.players[seat].dir);
+  const charging = (seat === net.seat && fishing.phase === "charge") || (seat !== net.seat && state.players[seat].anim === 1);
+  if (charging) return { x: H.x - sx * 16, y: H.y - 40 };
+  return { x: H.x + sx * 28, y: H.y + sy * 18 - 22 };
 }
 function drawRod(seat) {
-  const p = state.players[seat], d = disp[seat];
-  if (!p.line && !(seat === net.seat && fishing.phase === "charge")) return;
-  const hand = [d.x * TS + (p.dir === "left" ? -8 : 8), d.y * TS - 26], tip = rodTip(seat);
+  const p = state.players[seat];
+  const charging = (seat === net.seat && fishing.phase === "charge") || (seat !== net.seat && p.anim === 1);
+  if (!p.line && !charging) return;
+  const H = rodHand(seat), tip = rodTip(seat);
   ctx.strokeStyle = ["#8a5a2a", "#c8b060", "#e8e8f0", "#2a2a30", "#ffd040"][p.rod]; ctx.lineWidth = 3; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(hand[0], hand[1]); ctx.lineTo(tip[0], tip[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(H.x, H.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
 }
+const biting = (L, hn = hostNow()) => L && !L.hooked && hn >= L.biteAt && hn < L.biteAt + L.win;
 function bobberPos(seat, now) {
-  const L = state.players[seat].line;
-  const bx = (L.x + .5) * TS, by = (L.y + .5) * TS;
+  const L = state.players[seat].line, B = iso(L.x + .5, L.y + .5, WZ);
   const t = clamp((now - showAt(L)) / 450, 0, 1);    // flying out
-  if (t < 1) { const [tx, ty] = rodTip(seat); return [tx + (bx - tx) * t, ty + (by - ty) * t - Math.sin(t * Math.PI) * 60, false]; }
-  const hn = hostNow(), biting = !L.hooked && hn >= L.biteAt && hn < L.biteAt + L.win;
+  if (t < 1) { const tip = rodTip(seat); return [tip.x + (B.x - tip.x) * t, tip.y + (B.y - tip.y) * t - Math.sin(t * Math.PI) * 60, false]; }
+  const hn = hostNow(), bite = biting(L, hn);
   const nib = !L.hooked && hn < L.biteAt && hn > L.biteAt - 900 && Math.sin(now / 60) > .6;
-  if (L.hooked) return [bx + Math.sin(now / 70) * 6, by + Math.cos(now / 90) * 4, true];
-  return [bx, by + (biting ? 7 : Math.sin(now / 400) * 2 + (nib ? 3 : 0)), biting];
+  if (L.hooked) return [B.x + Math.sin(now / 70) * 6, B.y + Math.cos(now / 90) * 3, true];
+  return [B.x, B.y + (bite ? 6 : Math.sin(now / 400) * 1.5 + (nib ? 3 : 0)), bite];
 }
 function drawLine(seat, now) {
   const L = state.players[seat].line;
   if (!L) return;
-  const [tx, ty] = rodTip(seat), [bx, by, hot] = bobberPos(seat, now);
+  const tip = rodTip(seat), [bx, by] = bobberPos(seat, now);
   ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo((tx + bx) / 2, Math.max(ty, by) + (L.hooked ? -10 : 18), bx, by); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.quadraticCurveTo((tip.x + bx) / 2, Math.max(tip.y, by) + (L.hooked ? -10 : 14), bx, by); ctx.stroke();
 }
 function drawBobber(seat, now) {
   const L = state.players[seat].line;
@@ -1640,16 +1701,25 @@ function drawBobber(seat, now) {
   if (now - showAt(L) > 450) {
     const r = (now / 900) % 1;
     ctx.strokeStyle = `rgba(230,248,255,${.6 * (1 - r)})`; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(bx, by + 3, 6 + r * 16, (6 + r * 16) * .45, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(bx, by + 3, 6 + r * 18, (6 + r * 18) * .5, 0, 0, Math.PI * 2); ctx.stroke();
     if (L.hooked) for (let i = 0; i < 4; i++) { const a = now / 120 + i * 1.6; ctx.fillStyle = "rgba(255,255,255,.8)"; ctx.fillRect(bx + Math.cos(a) * 14, by + Math.sin(a) * 6 - 4, 3, 3); }
   }
   ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#e8483e"; ctx.beginPath(); ctx.arc(bx, by - 1, 5, Math.PI, 0); ctx.fill();
   ctx.strokeStyle = "#2a1814"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.stroke();
-  if (hot && !L.hooked) {
-    const s = 1 + Math.sin(now / 80) * .15;
-    label("!", bx, by - 16, "#ffe070", 22 * s, true);
-  }
+  if (hot) label("!", bx, by - 14, "#ffe070", 16);
+}
+// The big "!" over an angler's head while a fish is biting — for you and your friend.
+function drawBiteAlert(i, now) {
+  const L = state.players[i].line;
+  if (!biting(L)) return;
+  const F = feet(i), t = (hostNow() - L.biteAt) / 1000, pop = Math.min(1, t * 6), bob = Math.sin(now / 90) * 3;
+  const y = F.y - 96 + bob, r = 15 * pop * Math.min(ui, 1.6);
+  ctx.fillStyle = "#ffe070"; ctx.strokeStyle = "#08203a"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(F.x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(F.x - r * .35, y + r * .8); ctx.lineTo(F.x, y + r * 1.5); ctx.lineTo(F.x + r * .35, y + r * .8); ctx.fill();
+  ctx.font = `900 ${Math.round(r * 1.5)}px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#c0281a"; ctx.fillText("!", F.x, y + 1);
 }
 
 // Pets trail a little behind their angler, trot to keep up, and sit beside you while you fish.
@@ -1658,21 +1728,23 @@ const petHop = [0, 0];
 function updatePets(dt) {
   for (let i = 0; i < 2; i++) {
     const p = state.players[i], d = disp[i], kind = LOOKS.pet[cleanLook(p.look, i).pet || 0];
-    if (!PET_ART[kind] || (i === 1 && !net.connected && net.isHost) || !d) { petPos[i] = null; continue; }
+    if (!PET_ART[kind] || !d || (i !== net.seat && !net.connected)) { petPos[i] = null; continue; }
     const [bx, by] = DIRS[p.dir || "down"];
-    const side = p.line ? (p.dir === "left" ? .7 : -.7) : (i ? -.3 : .3) * Math.abs(by);
-    const tx = d.x - bx * .8 + side, ty = d.y - by * .55 + .15;
+    let tx = d.x - bx * .75, ty = d.y - by * .75;
+    if (p.line) { tx = d.x - by * .7 - bx * .2; ty = d.y + bx * .7 - by * .2; }     // sit to one side while fishing
+    else { tx += (i ? -.25 : .25) * Math.abs(by); ty += (i ? .25 : -.25) * Math.abs(bx); }
     let q = petPos[i];
     if (!q || Math.hypot(q.x - tx, q.y - ty) > 5) q = petPos[i] = { x: tx, y: ty, flip: false, moving: 0 };
     const dx = tx - q.x, dy = ty - q.y, dist = Math.hypot(dx, dy);
-    if (dist > 0.12) {
+    if (dist > 0.1) {
       const sp = Math.min(dist, Math.max(3.2, dist * 5) * dt);
       q.x += dx / dist * sp; q.y += dy / dist * sp;
-      if (Math.abs(dx) > 0.05) q.flip = dx > 0;          // art faces left; flip when heading right
+      const sdx = dx - dy;                                    // heading on screen
+      if (Math.abs(sdx) > 0.05) q.flip = sdx > 0;             // art faces left; flip when heading right
       q.moving = 0.25;
     } else {
       q.moving = Math.max(0, q.moving - dt);
-      if (p.line && !q.moving) q.flip = p.dir === "right" || (p.dir !== "left" && (p.line.x + .5) > q.x);   // watch the bobber
+      if (p.line && !q.moving) q.flip = isoX(p.line.x + .5, p.line.y + .5) > isoX(q.x, q.y);   // watch the bobber
     }
   }
 }
@@ -1680,17 +1752,16 @@ function drawPet(i, now) {
   const q = petPos[i], frames = PET_ART[LOOKS.pet[cleanLook(state.players[i].look, i).pet || 0]];
   if (!q || !frames) return;
   const img = frames[q.moving > 0 ? Math.floor(now / 140) % frames.length : Math.floor(now / 600) % 2];
-  const w = img.width / K * .75, h = img.height / K * .75, cx = q.x * TS, hop = Math.max(0, petHop[i] - now) / 600;
-  const feet = q.y * TS - Math.sin(hop * Math.PI * 2) * 14 * (hop > 0 ? 1 : 0);
-  ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(cx, q.y * TS, w * .32, 4, 0, 0, Math.PI * 2); ctx.fill();
+  const P = iso(q.x, q.y), w = img.width / K * .75, h = img.height / K * .75, hop = Math.max(0, petHop[i] - now) / 600;
+  const fy = P.y - (hop > 0 ? Math.sin(hop * Math.PI * 2) * 14 : 0);
+  ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(P.x, P.y, w * .32, 4, 0, 0, Math.PI * 2); ctx.fill();
   ctx.save();
-  if (q.flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0); }
+  if (q.flip) { ctx.translate(P.x, 0); ctx.scale(-1, 1); ctx.translate(-P.x, 0); }
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";   // smooth downscale keeps the detail
-  ctx.drawImage(img, cx - w / 2, feet - h + 2, w, h);
+  ctx.drawImage(img, P.x - w / 2, fy - h + 2, w, h);
+  ctx.imageSmoothingEnabled = false;
   ctx.restore();
-  const L = state.players[i].line, hn = hostNow();
-  if (L && !L.hooked && hn >= L.biteAt && hn < L.biteAt + L.win && LOOKS.pet[cleanLook(state.players[i].look, i).pet] === "Dog")
-    label("Woof!", cx, feet - h - 4, "#ffffff", 11);
+  if (biting(state.players[i].line) && LOOKS.pet[cleanLook(state.players[i].look, i).pet] === "Dog") label("Woof!", P.x, fy - h - 4, "#ffffff", 11);
 }
 // The equipped pet also romps between the joystick and the action button on touch screens.
 const petDock = document.getElementById("pet-dock"), petCtx = document.getElementById("pet-canvas").getContext("2d");
@@ -1706,43 +1777,78 @@ function drawPetDock(now) {
   if (key === petDockKey) return;
   petDockKey = key;
   const img = frames[f], c = petCtx.canvas, sc = Math.min((c.width - 16) / img.width, (c.height - 30) / img.height);
-  const w = img.width * sc, h = img.height * sc, x = (c.width - w) / 2, feet = c.height - 14;
+  const w = img.width * sc, h = img.height * sc, x = (c.width - w) / 2, fy = c.height - 14;
   petCtx.clearRect(0, 0, c.width, c.height);
-  petCtx.fillStyle = "#00000055"; petCtx.beginPath(); petCtx.ellipse(c.width / 2, feet, w * .34, 7, 0, 0, Math.PI * 2); petCtx.fill();
+  petCtx.fillStyle = "#00000055"; petCtx.beginPath(); petCtx.ellipse(c.width / 2, fy, w * .34, 7, 0, 0, Math.PI * 2); petCtx.fill();
   petCtx.imageSmoothingEnabled = true; petCtx.imageSmoothingQuality = "high";
-  petCtx.drawImage(img, x, feet - h + 3 - lift, w, h);
+  petCtx.drawImage(img, x, fy - h + 3 - lift, w, h);
 }
 
-// ================= Buildings =================
-function drawBuilding(b, now) {
-  const X = b.x * TS, Y = b.y * TS, W = b.w * TS, H = b.h * TS;
-  const r = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-  r(X + 6, Y + H - 4, W - 12, 8, "rgba(0,0,0,.25)");
-  if (b.stall) {
-    r(X + 8, Y + 26, W - 16, H - 30, "#a8743e");                       // stall back
-    for (let i = 0; i < 4; i++) r(X + 8, Y + 40 + i * 22, W - 16, 2, "#7a4a24");
-    r(X + 4, Y + H - 44, W - 8, 40, "#8a5a2a"); r(X + 4, Y + H - 44, W - 8, 6, "#b07a44");   // counter
-    for (let i = 0; i < 5; i++) { const fx = X + 16 + i * 32; r(fx, Y + H - 56, 26, 12, "#7aa0c0"); r(fx + 4, Y + H - 54, 16, 6, ["#e8a040", "#7aa070", "#e05a5a", "#3a8a8a", "#c8b040"][i]); }
-    for (let i = 0; i < 8; i++) r(X + i * W / 8, Y - 6, W / 8, 34, i % 2 ? "#f4f0e8" : b.roof);     // striped awning
-    for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? "#f4f0e8" : b.roof; ctx.beginPath(); ctx.arc(X + i * W / 8 + W / 16, Y + 28, W / 16, 0, Math.PI); ctx.fill(); }
-    r(X + 4, Y + 26, 6, H - 26, "#5a3418"); r(X + W - 10, Y + 26, 6, H - 26, "#5a3418");
-  } else {
-    r(X + 6, Y + 30, W - 12, H - 30, "#e8d8b8");                        // walls
-    for (let i = 0; i < 6; i++) r(X + 6, Y + 44 + i * 16, W - 12, 2, "#d0bc98");
-    r(X + 6, Y + H - 10, W - 12, 10, "#a8987a");
-    r(X + W / 2 - 14, Y + H - 52, 28, 52, "#7a4a24"); r(X + W / 2 + 6, Y + H - 28, 4, 4, "#ffd860");   // door
-    for (const wx of [X + 22, X + W - 52]) { r(wx, Y + H - 66, 30, 26, "#5a3418"); r(wx + 3, Y + H - 63, 24, 20, isNight(hostNow()) ? "#ffe890" : "#9ad0ff"); r(wx + 14, Y + H - 63, 2, 20, "#5a3418"); }
-    ctx.fillStyle = b.roof; ctx.beginPath();                              // roof
-    ctx.moveTo(X - 8, Y + 40); ctx.lineTo(X + 18, Y - 30); ctx.lineTo(X + W - 18, Y - 30); ctx.lineTo(X + W + 8, Y + 40); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 2;
-    for (let k = 1; k < 5; k++) { const yy = Y - 30 + k * 14; ctx.beginPath(); ctx.moveTo(X + 18 - k * 5.2, yy); ctx.lineTo(X + W - 18 + k * 5.2, yy); ctx.stroke(); }
-    r(X - 8, Y + 36, W + 16, 6, "rgba(0,0,0,.25)");
-    if (b.id === "home") { r(X + W - 44, Y - 46, 16, 30, "#8a5a4a"); if (Math.floor(now / 400) % 2) r(X + W - 42, Y - 58, 8, 8, "rgba(230,230,230,.6)"); }
-  }
-  // sign
-  r(X + W / 2 - 46, Y + (b.stall ? 2 : 22), 92, 22, "#6a4024"); r(X + W / 2 - 44, Y + (b.stall ? 4 : 24), 88, 18, "#c8945a");
-  label(b.sign + " " + b.name.replace("Your ", ""), X + W / 2, Y + (b.stall ? 17 : 37), "#2a1d05", 11, false, true);
+// ================= Scenery that stands up (sorted with the players by x + y) =================
+function drawTreeIso(x, y, art) {
+  const C = iso(x + .5, y + .5), w = TS * 1.6, h = w * art.height / art.width;
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(C.x, C.y, w * .3, w * .13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(art, C.x - w / 2, C.y - h * .93, w, h);
 }
+function drawRockIso(x, y) { const C = iso(x + .5, y + .5); ctx.drawImage(ROCK_ART, C.x - 26, C.y - 36, 52, 52); }
+function drawHouseIso(b, now) {
+  const i0 = b.x, i1 = b.x + b.w - 1, j0 = b.y, j1 = b.y + b.h - 1, Hh = 2.1, R = 3.3, mid = (j0 + j1 + 1) / 2, a = iso;
+  polyFill(ctx, [a(i0, j1 + 1.25), a(i1 + 1.25, j1 + 1.25), a(i1 + 1.25, j0), a(i0, j0)], "rgba(0,0,0,.18)");
+  polyFill(ctx, [a(i0, j1 + 1, 0), a(i1 + 1, j1 + 1, 0), a(i1 + 1, j1 + 1, Hh), a(i0, j1 + 1, Hh)], "#e8d8b8");
+  polyFill(ctx, [a(i1 + 1, j1 + 1, 0), a(i1 + 1, j0, 0), a(i1 + 1, j0, Hh), a(i1 + 1, j1 + 1, Hh)], "#c8b48e");
+  ctx.strokeStyle = "rgba(120,90,50,.35)"; ctx.lineWidth = 1;
+  for (let k = 1; k < 7; k++) { const z = k * Hh / 7, p1 = a(i0, j1 + 1, z), p2 = a(i1 + 1, j1 + 1, z), p3 = a(i1 + 1, j0, z); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.stroke(); }
+  const dx = i0 + b.w / 2 - .3;                                    // door faces the path
+  polyFill(ctx, [a(dx, j1 + 1, 0), a(dx + .6, j1 + 1, 0), a(dx + .6, j1 + 1, 1.3), a(dx, j1 + 1, 1.3)], "#7a4a2a", "#4a2a1a");
+  ctx.fillStyle = "#ffd860"; const kn = a(dx + .5, j1 + 1, .65); ctx.fillRect(kn.x - 1.5, kn.y - 1.5, 3, 3);
+  const lit = isNight(hostNow()) ? "#ffe890" : "#8fd0ff";
+  for (const wi of [i0 + .25, i1 + .3]) polyFill(ctx, [a(wi, j1 + 1, .75), a(wi + .45, j1 + 1, .75), a(wi + .45, j1 + 1, 1.4), a(wi, j1 + 1, 1.4)], lit, "#5a3a24", 1.5);
+  polyFill(ctx, [a(i1 + 1, j0 + 1.3, .75), a(i1 + 1, j0 + .7, .75), a(i1 + 1, j0 + .7, 1.4), a(i1 + 1, j0 + 1.3, 1.4)], lit, "#5a3a24", 1.5);
+  if (b.id === "home") {
+    polyFill(ctx, [a(i1 + .4, j0 + .3, R - .7), a(i1 + .7, j0 + .3, R - .7), a(i1 + .7, j0 + .3, R + .55), a(i1 + .4, j0 + .3, R + .55)], "#8a6a5a", "#5e4a40");
+    if (Math.floor(now / 500) % 2) { const sm = a(i1 + .55, j0 + .3, R + .9); ctx.fillStyle = "rgba(230,230,230,.6)"; ctx.beginPath(); ctx.arc(sm.x, sm.y, 5, 0, 7); ctx.fill(); }
+  }
+  const dark = shadeOf(b.roof, .6);
+  polyFill(ctx, [a(i0 - .15, j1 + 1.2, Hh), a(i1 + 1.15, j1 + 1.2, Hh), a(i1 + 1.15, mid, R), a(i0 - .15, mid, R)], b.roof, dark, 1.5);
+  polyFill(ctx, [a(i1 + 1, j1 + 1, Hh), a(i1 + 1, j0, Hh), a(i1 + 1, mid, R)], "#e0c89a", "#8a6a4a");
+  ctx.strokeStyle = "rgba(255,255,255,.25)";
+  for (let k = 1; k < 5; k++) { const t = k / 5, jj = j1 + 1.2 - t * (j1 + 1.2 - mid), zz = Hh + t * (R - Hh), p1 = a(i0 - .15, jj, zz), p2 = a(i1 + 1.15, jj, zz); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+  signBoard(b, a(dx + .3, j1 + 1, 1.75));
+}
+function drawStallIso(b, now) {
+  const i0 = b.x, i1 = b.x + b.w, j0 = b.y + .15, jc = b.y + b.h - .7, j1 = b.y + b.h, a = iso;
+  polyFill(ctx, [a(i0, j1 + .2), a(i1 + .2, j1 + .2), a(i1 + .2, j0), a(i0, j0)], "rgba(0,0,0,.18)");
+  // back wall with fish hanging on it
+  polyFill(ctx, [a(i0, j0, 0), a(i1, j0, 0), a(i1, j0, 2.4), a(i0, j0, 2.4)], "#a8743e", "#5a3418");
+  ctx.strokeStyle = "#7a4a24"; ctx.lineWidth = 1;
+  for (let k = 1; k < 5; k++) { const p1 = a(i0, j0, k * .38), p2 = a(i1, j0, k * .38); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+  ["sunfish", "trout", "snapper", "mackerel"].forEach((id, k) => { const art = fishArt(id), p = a(i0 + .6 + k * .95, j0, 1.75); if (art) ctx.drawImage(art.canvas, p.x - 14, p.y - 9, 28, 18); });
+  // counter: front face, right face and an icy top with fish on it
+  polyFill(ctx, [a(i0, j1, 0), a(i1, j1, 0), a(i1, j1, .85), a(i0, j1, .85)], "#8a5a2a", "#4a2c18");
+  polyFill(ctx, [a(i1, j1, 0), a(i1, jc, 0), a(i1, jc, .85), a(i1, j1, .85)], "#6a4020", "#4a2c18");
+  polyFill(ctx, [a(i0, jc, .85), a(i1, jc, .85), a(i1, j1, .85), a(i0, j1, .85)], "#d8f0ff", "#8ab0c8");
+  ["bluegill", "perch", "salmon", "bass", "chub"].forEach((id, k) => { const art = fishArt(id), p = a(i0 + .5 + k * .78, jc + .35, .85); if (art) ctx.drawImage(art.canvas, p.x - 13, p.y - 9, 26, 16); });
+  // posts and a striped awning
+  ctx.strokeStyle = "#5a3418"; ctx.lineWidth = 4;
+  for (const [px, py] of [[i0 + .05, j1 + .05], [i1 - .05, j1 + .05], [i1 - .05, j0]]) { const p = a(px, py, 0), q = a(px, py, 2.6); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+  const n = 8;
+  for (let k = 0; k < n; k++) {
+    const u0 = i0 - .1 + (i1 - i0 + .2) * k / n, u1 = i0 - .1 + (i1 - i0 + .2) * (k + 1) / n;
+    polyFill(ctx, [a(u0, j0 - .1, 3.15), a(u1, j0 - .1, 3.15), a(u1, j1 + .3, 2.6), a(u0, j1 + .3, 2.6)], k % 2 ? "#f4f0e8" : b.roof);
+    polyFill(ctx, [a(u0, j1 + .3, 2.6), a(u1, j1 + .3, 2.6), a(u1, j1 + .3, 2.4), a(u0, j1 + .3, 2.4)], k % 2 ? "#d8d0c0" : shadeOf(b.roof, .75));
+  }
+  signBoard(b, a(b.x + b.w / 2 + .3, j1 + .3, 2.95));
+}
+function signBoard(b, p) {
+  const text = b.sign + " " + b.name, fs = Math.round(10 * Math.min(ui, 1.5));
+  ctx.font = `bold ${fs}px "Trebuchet MS", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const tw = ctx.measureText(text).width + 12, th = fs + 7;
+  ctx.fillStyle = "#8a5a34"; ctx.strokeStyle = "#4a2a1a"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(p.x - tw / 2, p.y - th / 2, tw, th, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#fff0b0"; ctx.fillText(text, p.x, p.y + .5);
+}
+const KEEPER_SPOT = { tackle: () => { const b = BUILDINGS[1]; return { x: b.x + b.w - .45, y: b.y + b.h + .05 }; },
+                      market: () => { const b = BUILDINGS[2]; return { x: b.x + b.w + .4, y: b.y + b.h - .3 }; } };
 
 // ================= Text in the world =================
 function label(text, x, y, color, size = 11, bold = true, plain = false) {
@@ -1770,101 +1876,110 @@ function draw(now) {
   const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now;
   if (!state || !document.body.classList.contains("ingame")) return;
   tickLocal(dt, now);
-  const me = state.players[net.seat];
   for (let i = 0; i < 2; i++) {
     const p = state.players[i];
     if (!disp[i] || Math.hypot(disp[i].x - p.x, disp[i].y - p.y) > 4) disp[i] = { x: p.x, y: p.y, moving: false };
     const d = disp[i];
-    if (i === net.seat) { d.moving = Math.hypot(p.x - d.x, p.y - d.y) > .001 || moveVec.len > 0; d.x = p.x; d.y = p.y; }
+    if (i === net.seat) { d.moving = moveVec.len > 0; d.x = p.x; d.y = p.y; }
     else { const k = 1 - Math.pow(.0005, dt), ox = d.x, oy = d.y; d.x += (p.x - d.x) * k; d.y += (p.y - d.y) * k; d.moving = Math.hypot(d.x - ox, d.y - oy) > dt * .4; }
     if (d.moving) walkAnim[i] += dt;
   }
   updatePets(dt);
   updateView(disp[net.seat]);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#1a5286"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(cam.s, 0, 0, cam.s, Math.round(-cam.x0 * cam.s), Math.round(-cam.y0 * cam.s));
-  // background chunks
-  const c0 = Math.max(0, Math.floor(cam.x0 / (CH * TS))), c1 = Math.min(MW / CH - 1, Math.floor((cam.x0 + cam.vw) / (CH * TS)));
-  const r0 = Math.max(0, Math.floor(cam.y0 / (CH * TS))), r1 = Math.min(MH / CH - 1, Math.floor((cam.y0 + cam.vh) / (CH * TS)));
-  ctx.imageSmoothingEnabled = true;
-  for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) ctx.drawImage(chunkBg(cx, cy), cx * CH * TS, cy * CH * TS, CH * TS + .5, CH * TS + .5);
+  ctx.fillStyle = "#1a4a7a"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(cam.s, 0, 0, cam.s, -cam.x0 * cam.s, -cam.y0 * cam.s);
   ctx.imageSmoothingEnabled = false;
-  const tx0 = Math.max(0, Math.floor(cam.x0 / TS) - 1), tx1 = Math.min(MW - 1, Math.ceil((cam.x0 + cam.vw) / TS) + 1);
-  const ty0 = Math.max(0, Math.floor(cam.y0 / TS) - 1), ty1 = Math.min(MH - 1, Math.ceil((cam.y0 + cam.vh) / TS) + 2);
+  // visible tile range (with a margin for tall things)
+  const corners = [[0, 0], [canvas.width, 0], [0, canvas.height], [canvas.width, canvas.height]].map(([px, py]) => screenToTile(px, py));
+  const tx0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c.x))) - 2), tx1 = Math.min(MW - 1, Math.ceil(Math.max(...corners.map(c => c.x))) + 3);
+  const ty0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c.y))) - 2), ty1 = Math.min(MH - 1, Math.ceil(Math.max(...corners.map(c => c.y))) + 3);
+  const vx0 = cam.x0 - IW, vx1 = cam.x0 + cam.vw + IW, vy0 = cam.y0 - IH, vy1 = cam.y0 + cam.vh + 4 * IZ;
+  const onScreen = (x, y) => { const X = isoX(x + .5, y + .5), Y = isoY(x + .5, y + .5); return X > vx0 && X < vx1 && Y > vy0 && Y < vy1; };
+  // ground
+  for (let cy = Math.floor(ty0 / CH); cy <= Math.floor(ty1 / CH); cy++) for (let cx = Math.floor(tx0 / CH); cx <= Math.floor(tx1 / CH); cx++) {
+    const x0 = cx * CH, y0 = cy * CH, bx0 = isoX(x0, y0 + CH), bx1 = isoX(x0 + CH, y0), by0 = isoY(x0, y0) - IZ, by1 = isoY(x0 + CH, y0 + CH) + IZ;
+    if (bx1 < cam.x0 || bx0 > cam.x0 + cam.vw || by1 < cam.y0 || by0 > cam.y0 + cam.vh) continue;   // off screen: don't even build it
+    drawIsoCanvas(isoChunk(cx, cy));
+  }
   // water sparkle, jumping fish and hot spots
   const hn = hostNow();
   for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
-    if (!waterAt(x, y)) continue;
+    if (!waterAt(x, y) || !onScreen(x, y)) continue;
     const ph = (now / 2600 + hash2(x, y, 90)) % 1;
-    if (ph < .18) { ctx.fillStyle = `rgba(255,255,255,${.5 * Math.sin(ph / .18 * Math.PI)})`; ctx.fillRect(x * TS + hash2(x, y, 91) * 36, y * TS + hash2(x, y, 92) * 40, 8, 2); }
+    if (ph < .18) { const p = iso(x + .2 + hash2(x, y, 91) * .6, y + .2 + hash2(x, y, 92) * .6, WZ); ctx.fillStyle = `rgba(255,255,255,${.55 * Math.sin(ph / .18 * Math.PI)})`; ctx.fillRect(p.x - 4, p.y - 1, 8, 2); }
     if (hash2(x, y, 93 + Math.floor(now / 5000)) < .004) {          // a fish jumps now and then
       const t = (now % 5000) / 700;
-      if (t < 1) { ctx.fillStyle = "rgba(40,60,80,.6)"; ctx.beginPath(); ctx.ellipse(x * TS + 24, y * TS + 24 - Math.sin(t * Math.PI) * 14, 7, 3, t * 3, 0, Math.PI * 2); ctx.fill(); }
+      if (t < 1) { const p = iso(x + .5, y + .5, WZ); ctx.fillStyle = "rgba(30,50,70,.65)"; ctx.beginPath(); ctx.ellipse(p.x + (t - .5) * 16, p.y - Math.sin(t * Math.PI) * 16, 7, 3, (t - .5) * 2, 0, Math.PI * 2); ctx.fill(); }
     }
   }
   for (const h of hotSpots(hn)) {
-    if (h.x < tx0 || h.x > tx1 || h.y < ty0 || h.y > ty1) continue;
-    for (let i = 0; i < 5; i++) {
-      const t = (now / 1100 + i / 5) % 1, bx = (h.x + .5) * TS + Math.sin(i * 2.3) * 16, by = (h.y + .5) * TS + Math.cos(i * 1.7) * 10 - t * 8;
+    if (!onScreen(h.x, h.y)) continue;
+    const C = iso(h.x + .5, h.y + .5, WZ);
+    for (let i = 0; i < 6; i++) {
+      const t = (now / 1100 + i / 6) % 1, bx = C.x + Math.sin(i * 2.3) * 18, by = C.y + Math.cos(i * 1.7) * 7 - t * 9;
       ctx.strokeStyle = `rgba(255,255,255,${.85 * (1 - t)})`; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(bx, by, 2 + t * 4, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  for (let i = 0; i < 2; i++) if (state.players[i].line && (i === net.seat || net.connected)) drawBobber(i, now);
-  // things that stand up, sorted by their feet
+  const seen = i => i === net.seat || net.connected;
+  for (let i = 0; i < 2; i++) if (state.players[i].line && seen(i)) drawBobber(i, now);
+  // things that stand up, sorted back to front (x + y)
   const things = [];
   for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
     const t = tileAt(x, y);
+    if ((t !== T.TREE && t !== T.ROCK) || !onScreen(x, y)) continue;
     if (t === T.TREE) {
       const n = hash2(x, y, 15), art = y < 22 || y > 56 ? (n < .7 ? TREE_ART.pine : TREE_ART.oak) : (n < .15 ? TREE_ART.fruit : n < .45 ? TREE_ART.pine : TREE_ART.oak);
-      things.push({ k: y + .9, draw: () => { ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.beginPath(); ctx.ellipse(x * TS + 24, y * TS + 42, 20, 7, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.drawImage(art, x * TS - 12, y * TS - 50, 72, 90); } });
-    } else if (t === T.ROCK) things.push({ k: y + .8, draw: () => drawSprite(ROCK_ART, x * TS, y * TS, TS, TS) });
+      things.push({ k: x + y + 1, draw: () => drawTreeIso(x, y, art) });
+    } else things.push({ k: x + y + 1, draw: () => drawRockIso(x, y) });
   }
-  BUILDINGS.forEach(b => { if (b.x + b.w >= tx0 && b.x <= tx1 && b.y + b.h >= ty0 - 2 && b.y <= ty1) things.push({ k: b.y + b.h - .5, draw: () => drawBuilding(b, now) }); });
-  for (const [id, sk] of Object.entries(SHOPKEEPS)) {
-    const b = BUILDINGS.find(q => q.id === id), x = b.x + b.w / 2 + (b.stall ? 0 : 1.2), y = b.y + b.h - (b.stall ? .55 : .05);
-    things.push({ k: y + .01, draw: () => { const spr = lookSprites(cleanLook(sk.look)); drawSprite(spr.down.idle[Math.floor(now / 800) % 2], x * TS - TS / 2, y * TS - 58); } });
+  for (const b of BUILDINGS) if (b.x + b.w >= tx0 && b.x <= tx1 && b.y + b.h >= ty0 && b.y <= ty1) things.push({ k: b.x + b.y + b.h - .2, draw: () => (b.stall ? drawStallIso : drawHouseIso)(b, now) });
+  for (const id of ["tackle", "market"]) {
+    const kp = KEEPER_SPOT[id]();
+    things.push({ k: kp.x + kp.y, draw: () => { const P = iso(kp.x, kp.y); drawSprite(lookSprites(cleanLook(SHOPKEEPS[id].look)).left.idle[Math.floor(now / 800) % 2], P.x - 24, P.y - 57); } });
   }
   for (let i = 0; i < 2; i++) {
-    if (i !== net.seat && !net.connected) continue;
+    if (!seen(i)) continue;
     const d = disp[i];
-    things.push({ k: d.y, draw: () => {
-      ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(d.x * TS, d.y * TS - 2, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-      drawSprite(poseFor(i, now), d.x * TS - TS / 2, d.y * TS - 58);
+    things.push({ k: d.x + d.y, draw: () => {
+      const F = iso(d.x, d.y);
+      ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(F.x, F.y - 1, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+      drawSprite(poseFor(i, now), F.x - 24, F.y - 57);
       drawRod(i);
     } });
-    if (petPos[i]) things.push({ k: petPos[i].y - .01, draw: () => drawPet(i, now) });
+    if (petPos[i]) things.push({ k: petPos[i].x + petPos[i].y - .02, draw: () => drawPet(i, now) });
   }
   things.sort((a, b) => a.k - b.k).forEach(t => t.draw());
-  for (let i = 0; i < 2; i++) if (state.players[i].line && (i === net.seat || net.connected)) drawLine(i, now);
-  // names, bubbles, effects
+  for (let i = 0; i < 2; i++) if (state.players[i].line && seen(i)) drawLine(i, now);
+  // names, bubbles, bite alerts, effects
   for (let i = 0; i < 2; i++) {
-    if (i !== net.seat && !net.connected) continue;
-    const d = disp[i], p = state.players[i];
-    label(p.name, d.x * TS, d.y * TS - 66, i ? "#ffb08a" : "#8fd0ff", 10);
-    if (p.line && p.line.hooked && i !== net.seat) label("🎣 Reeling!", d.x * TS, d.y * TS - 82, "#ffe070", 10);
-    const b = bubbles[i]; if (b && now < b.until) bubble(b.text, d.x * TS, d.y * TS - (p.line && p.line.hooked && i !== net.seat ? 92 : 78));
+    if (!seen(i)) continue;
+    const F = feet(i), p = state.players[i], bite = biting(p.line, hn);
+    label(p.name, F.x, F.y - 66, i ? "#ffb08a" : "#8fd0ff", 10);
+    if (p.line && p.line.hooked && i !== net.seat) label("🎣 Reeling!", F.x, F.y - 82, "#ffe070", 10);
+    const b = bubbles[i]; if (b && now < b.until) bubble(b.text, F.x, F.y - (bite ? 120 : p.line && p.line.hooked && i !== net.seat ? 92 : 78));
+    drawBiteAlert(i, now);
   }
-  for (const [id, sk] of Object.entries(SHOPKEEPS)) { const b = BUILDINGS.find(q => q.id === id); label(sk.name, (b.x + b.w / 2 + (b.stall ? 0 : 1.2)) * TS, (b.y + b.h - (b.stall ? .55 : .05)) * TS - 66, "#ffe8a0", 9); }
+  for (const id of ["tackle", "market"]) { const kp = KEEPER_SPOT[id](), P = iso(kp.x, kp.y); label(SHOPKEEPS[id].name, P.x, P.y - 66, "#ffe8a0", 9); }
   for (let i = fxList.length - 1; i >= 0; i--) {
-    const f = fxList[i], t = (now - f.t0) / 1400;
+    const f = fxList[i], t = (now - f.t0) / 1600;
     if (t >= 1) { fxList.splice(i, 1); continue; }
-    ctx.globalAlpha = 1 - t * t; label(f.text, (f.x + .5) * TS, (f.y + .2) * TS - t * 40, f.color || "#fff", 13); ctx.globalAlpha = 1;
+    const P = iso(f.x + .5, f.y + .5, WZ);
+    ctx.globalAlpha = 1 - t * t; label(f.text, P.x, P.y - 20 - t * 40, f.color || "#fff", 13); ctx.globalAlpha = 1;
   }
-  // night: darken, with a warm glow around you (and your friend)
+  // night: darken, with a warm glow around you
   const h = hourAt(hn), dark = h >= 21 || h < 4 ? .68 : h >= 18 ? (h - 18) / 3 * .68 : h < 6 ? (6 - h) / 2 * .68 : 0;
   if (dark > 0) {
     ctx.save(); ctx.globalCompositeOperation = "multiply";
-    const pd = disp[net.seat], gr = ctx.createRadialGradient(pd.x * TS, pd.y * TS - 30, 40, pd.x * TS, pd.y * TS - 30, 190);
+    const F = feet(net.seat), gr = ctx.createRadialGradient(F.x, F.y - 30, 40, F.x, F.y - 30, 230);
     const c = Math.round(255 * (1 - dark)), cb = Math.round(255 * (1 - dark * .55));
     gr.addColorStop(0, "#ffffff"); gr.addColorStop(1, `rgb(${c},${c},${cb})`);
     ctx.fillStyle = gr; ctx.fillRect(cam.x0, cam.y0, cam.vw, cam.vh);
     ctx.restore();
-    if (dark > .3) for (const b of BUILDINGS) if (!b.stall) { ctx.fillStyle = "rgba(255,220,120,.12)"; ctx.beginPath(); ctx.arc((b.x + b.w / 2) * TS, (b.y + b.h) * TS - 50, 80, 0, Math.PI * 2); ctx.fill(); }
+    if (dark > .3) for (const b of BUILDINGS) if (!b.stall) { const P = iso(b.x + b.w / 2, b.y + b.h + .3); ctx.fillStyle = "rgba(255,220,120,.12)"; ctx.beginPath(); ctx.ellipse(P.x, P.y, 90, 45, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  // screen-space overlays: action hint, charge meter, reel minigame
+  // screen-space overlays: charge meter, reel minigame
   ctx.setTransform(cam.dpr, 0, 0, cam.dpr, 0, 0);
   drawOverlay(now);
   drawMinimap(now);
@@ -1873,26 +1988,26 @@ function draw(now) {
 
 function drawOverlay(now) {
   const me = state.players[net.seat], sw = canvas.width / cam.dpr, sh = canvas.height / cam.dpr;
-  const [px, py] = toScreen(disp[net.seat].x * TS, disp[net.seat].y * TS);
+  const F = feet(net.seat), [px, py] = toScreen(F.x, F.y);
   if (fishing.phase === "charge") {                     // casting power
-    const w = 90, h = 12, x = px - w / 2, y = py - 110 * cam.s / cam.dpr - 4;
+    const tgt = castRay(me, fishing.power);
+    if (tgt) {
+      ctx.save(); ctx.setTransform(cam.s, 0, 0, cam.s, -cam.x0 * cam.s, -cam.y0 * cam.s);
+      ctx.setLineDash([6, 5]); polyFill(ctx, diamond(tgt.x, tgt.y, WZ), "rgba(255,240,160,.18)", "rgba(255,240,160,.95)", 2); ctx.restore();
+    }
+    const w = 90, h = 12, x = px - w / 2, y = py - 112 * cam.s / cam.dpr;
     ctx.fillStyle = "rgba(8,26,52,.85)"; ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
     const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, "#7ae0ff"); g.addColorStop(1, "#ffd860");
     ctx.fillStyle = g; ctx.fillRect(x, y, w * fishing.power, h);
     ctx.strokeStyle = "#f4ecd0"; ctx.lineWidth = 2; ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
-    const tgt = castRay({ ...me, x: me.x, y: me.y }, fishing.power);
-    if (tgt) { ctx.save(); ctx.setTransform(cam.s, 0, 0, cam.s, Math.round(-cam.x0 * cam.s), Math.round(-cam.y0 * cam.s));
-      ctx.strokeStyle = "rgba(255,240,160,.9)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 2; ctx.strokeRect(tgt.x * TS + 6, tgt.y * TS + 6, TS - 12, TS - 12); ctx.restore(); }
   }
   if (fishing.phase === "reel") drawReel(now, sw, sh);
   const L = me.line;
-  if (L && !L.hooked && fishing.phase === "wait") {
-    const hn = hostNow();
-    if (hn >= L.biteAt && hn < L.biteAt + L.win) {
-      ctx.font = `bold ${22}px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.lineWidth = 5; ctx.strokeStyle = "#08203a"; ctx.strokeText(isTouch ? "Tap HOOK!" : "Press SPACE!", sw / 2, 30);
-      ctx.fillStyle = "#ffe070"; ctx.fillText(isTouch ? "Tap HOOK!" : "Press SPACE!", sw / 2, 30);
-    }
+  if (biting(L) && fishing.phase === "wait") {
+    const msg = isTouch ? "Tap HOOK!" : "Press SPACE!";
+    ctx.font = `bold 22px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 5; ctx.strokeStyle = "#08203a"; ctx.strokeText(msg, sw / 2, 30);
+    ctx.fillStyle = "#ffe070"; ctx.fillText(msg, sw / 2, 30);
   }
 }
 
@@ -1900,7 +2015,8 @@ function drawOverlay(now) {
 function drawReel(now, sw, sh) {
   const R = fishing.reel, bh = Math.min(sh * .62, 260), bw = 34, x = sw - bw - 22, y = (sh - bh) / 2;
   ctx.fillStyle = "rgba(8,26,52,.9)"; ctx.beginPath(); ctx.roundRect(x - 8, y - 30, bw + 34, bh + 44, 10); ctx.fill();
-  ctx.strokeStyle = "#f4ecd0"; ctx.lineWidth = 2; ctx.stroke();
+  const rr = rarityOf(R.fish);
+  ctx.strokeStyle = CATCH[R.fish].rarity ? rr.col : "#f4ecd0"; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = "#3a86c4"; ctx.fillRect(x, y, bw, bh);
   const zh = R.zone * bh, zy = y + bh - (R.zy + R.zone) * bh;
   const inside = R.fy >= R.zy && R.fy <= R.zy + R.zone;
@@ -1911,13 +2027,14 @@ function drawReel(now, sw, sh) {
   else { ctx.font = "22px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(CATCH[R.fish].shape, x + bw / 2, fy); }
   ctx.fillStyle = "#0e2a4a"; ctx.fillRect(x + bw + 8, y, 10, bh);       // progress
   ctx.fillStyle = R.progress > .25 ? "#ffd860" : "#ff9a8a"; ctx.fillRect(x + bw + 8, y + bh * (1 - R.progress), 10, bh * R.progress);
-  ctx.font = `bold 12px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#ffe070";
-  ctx.fillText(CATCH[R.fish].legend ? "⭐ LEGEND" : "Reel!", x + bw / 2 + 9, y - 14);
+  ctx.font = `bold 12px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = CATCH[R.fish].rarity ? rr.col : "#ffe070";
+  ctx.fillText(CATCH[R.fish].rarity ? rr.name + "!" : "Reel!", x + bw / 2 + 9, y - 14);
   ctx.fillStyle = "#bfe0f4"; ctx.font = `11px "Trebuchet MS", system-ui`;
   ctx.fillText(isTouch ? "hold" : "hold Space", x + bw / 2 + 9, y + bh + 8);
 }
 
-// ================= Minimap =================
+// ================= Minimap (top-down, like Mine with friends) =================
 const mm = document.getElementById("minimap"), mmx = mm.getContext("2d");
 let mmBase = null;
 function drawMinimap(now) {
@@ -1931,8 +2048,9 @@ function drawMinimap(now) {
   mmx.imageSmoothingEnabled = false;
   mmx.drawImage(mmBase, 0, 0, mm.width, mm.height);
   const k = mm.width / MW;
-  mmx.strokeStyle = "rgba(255,255,255,.6)"; mmx.lineWidth = 1;
-  mmx.strokeRect(cam.x0 / TS * k, cam.y0 / TS * k, cam.vw / TS * k, cam.vh / TS * k);
+  const cs = [[0, 0], [canvas.width, 0], [canvas.width, canvas.height], [0, canvas.height]].map(([px, py]) => screenToTile(px, py));
+  mmx.strokeStyle = "rgba(255,255,255,.7)"; mmx.lineWidth = 1;
+  mmx.beginPath(); cs.forEach((c, i) => i ? mmx.lineTo(c.x * k, c.y * k) : mmx.moveTo(c.x * k, c.y * k)); mmx.closePath(); mmx.stroke();
   for (const h of hotSpots(hostNow())) { mmx.fillStyle = Math.floor(now / 400) % 2 ? "#ffffff" : "#9ad0ff"; mmx.fillRect(h.x * k - 1, h.y * k - 1, 3, 3); }
   const dot = (i, c) => { const d = disp[i]; if (!d) return; mmx.fillStyle = "#08203a"; mmx.fillRect(d.x * k - 4, d.y * k - 4, 8, 8); mmx.fillStyle = c; mmx.fillRect(d.x * k - 3, d.y * k - 3, 6, 6); };
   if (net.connected) dot(1 - net.seat, net.seat ? "#8fd0ff" : "#ffb08a");
@@ -1969,8 +2087,12 @@ function tickLocal(dt, now) {
   const busy = fishing.phase === "charge" || fishing.phase === "reel" || !document.getElementById("menu").classList.contains("hidden");
   moveVec.len = busy || len < .18 ? 0 : Math.min(1, len);
   if (moveVec.len) {
-    vx /= len; vy /= len;
-    me.dir = Math.abs(vx) > Math.abs(vy) ? (vx > 0 ? "right" : "left") : (vy > 0 ? "down" : "up");
+    let sx = vx / len, sy = vy / len;
+    vx = sy + sx / 2; vy = sy - sx / 2;                 // the stick points on screen; the isometric view turns that into a grid direction
+    { const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
+    const hx = vx > 0 ? "right" : "left", hy = vy > 0 ? "down" : "up";   // face the grid direction you're mostly heading (keep it on a tie)
+    if (Math.abs(vx) > Math.abs(vy) + .12) me.dir = hx; else if (Math.abs(vy) > Math.abs(vx) + .12) me.dir = hy;
+    else if (me.dir !== hx && me.dir !== hy) me.dir = Math.abs(vx) >= Math.abs(vy) ? hx : hy;
     const step = SPEED * moveVec.len * dt;
     if (walkable(me.x + vx * step, me.y)) me.x += vx * step;
     if (walkable(me.x, me.y + vy * step)) me.y += vy * step;
@@ -2137,6 +2259,7 @@ function sfx(kind) {
   if (kind === "cast") { tone(500, 0, .08, "triangle"); tone(300, .08, .1, "triangle"); }
   if (kind === "bite") { tone(880, 0, .07); tone(1180, .08, .09); }
   if (kind === "catch") [523, 659, 784].forEach((f, i) => tone(f, i * .08, .14));
+  if (kind === "rare") [587, 740, 880, 1175].forEach((f, i) => tone(f, i * .07, .16, "triangle", .07));
   if (kind === "legend") [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, i * .1, .2, "triangle", .08));
   if (kind === "coin") { tone(988, 0, .06); tone(1318, .06, .12); }
   if (kind === "bad") tone(180, 0, .2, "sawtooth", .04);
@@ -2144,18 +2267,18 @@ function sfx(kind) {
 
 // ================= Results, HUD, side panel =================
 let toastTimer = 0;
-function toast(text, cls = "", ms = 3500) {
+function toast(text, cls = "", ms = 3500, color = "") {
   const el = document.getElementById("toast");
-  el.textContent = text; el.className = "toast " + cls;
+  el.textContent = text; el.className = "toast " + cls; el.style.borderColor = color; el.style.color = color && color !== RARITY[0].col ? color : "";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add("fade"), ms);
 }
 function onResult(r) {
   if (r && !r.quiet) {
     const mine = r.seat === net.seat;
-    if (!r.private || mine) toast(r.text, r.neutral ? "" : r.ok ? "ok" : "bad", r.levelUp ? 6000 : 4000);
+    if (!r.private || mine) toast(r.text, r.neutral ? "" : r.ok ? "ok" : "bad", r.levelUp || r.rarity >= 3 ? 6000 : 4000, r.rarity ? RARITY[r.rarity].col : "");
     if (mine && r.sfx) sfx(r.sfx);
     if (mine && !r.ok && !r.sfx) sfx("bad");
-    if (!mine && r.sfx === "legend") sfx("legend");
+    if (!mine && (r.sfx === "legend" || r.sfx === "rare")) sfx(r.sfx);
   }
   if (r && r.fx) addFx(r.fx);
   if (r && r.petHop) petHop[r.seat] = performance.now() + 600;
@@ -2211,7 +2334,7 @@ function renderMenu() {
   if (!menuKind || !state) return;
   const me = state.players[net.seat], gold = state.team.gold;
   const title = document.getElementById("menu-title"), note = document.getElementById("menu-note"), body = document.getElementById("menu-body");
-  const row = (ic, name, sub, btn) => `<div class="mrow"><div class="ic">${ic}</div><div class="txt"><b>${name}</b><small>${sub}</small></div>${btn || ""}</div>`;
+  const row = (ic, name, sub, btn, rc) => `<div class="mrow${rc ? " rar" : ""}" ${rc ? `style="--rc:${rc}"` : ""}><div class="ic">${ic}</div><div class="txt"><b>${name}</b><small>${sub}</small></div>${btn || ""}</div>`;
   if (menuKind === "tackle") {
     title.textContent = "🎣 Tackle Shop"; note.innerHTML = `“Better gear, bigger fish!” — Reel Rita · Team stash: 💰<b>${gold.toLocaleString()}</b>`;
     let h = `<div class="opt-title">Rods</div>`;
@@ -2240,22 +2363,24 @@ function renderMenu() {
     }
     if (selling && me.items.length) h += `<button class="btn-gold" data-sellall style="width:100%;margin-bottom:8px">Sell everything for 💰${total}</button>`;
     me.items.forEach((it, i) => {
-      const f = CATCH[it.id], sz = f.junk ? "" : sizeLabel(f, it.kg);
-      h += row(fishIcon(it.id), `${f.legend ? "⭐ " : ""}${f.name}`, `${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
-        selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`);
+      const f = CATCH[it.id], sz = f.junk ? "" : sizeLabel(f, it.kg), rr = RARITY[f.rarity];
+      h += row(fishIcon(it.id), `${f.name} ${f.junk ? "" : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
+        selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`, f.junk ? "" : rr.col);
     });
     if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! Ponds are easy, the sea and deep water hold the big ones.</small></div></div>`;
     body.innerHTML = h;
   } else if (menuKind === "journal") {
     title.textContent = "📖 Fish journal";
     const seen = FISH.filter(f => state.dex[f.id]).length;
-    note.innerHTML = `${seen}/${FISH.length} species found by your team. Bubbling spots move every few minutes — fish bite faster there.`;
+    note.innerHTML = `${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}<br>Bubbling spots, Shiny Lures and better rods make rarer fish bite more often.`;
     const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Sea"]];
     let h = `<div class="tabs">${tabs.map(([k, t]) => `<button class="${journalTab === k ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</div><div class="dex">`;
     for (const f of FISH.filter(f => journalTab === "all" || f.water.includes(journalTab))) {
       const d = state.dex[f.id];
       const where = f.water.map(w => w[0].toUpperCase() + w.slice(1)).join(", ") + (f.deep ? " · deep" : "") + (f.time ? ` · ${f.time === "night" ? "🌙" : "☀️"}` : "");
-      h += `<div class="cell ${d ? "" : "unseen"} ${f.legend ? "leg" : ""}">${fishIcon(f.id)}<b>${d ? f.name : "???"}</b>
+      const rr = RARITY[f.rarity];
+      h += `<div class="cell ${d ? "" : "unseen"}" style="--rc:${rr.col}">${fishIcon(f.id)}<b>${d ? f.name : "???"}</b>
+        <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>
         <div style="color:var(--muted)">${d ? where : `Lv ${f.lvl}+ · ${f.water.map(w => w[0].toUpperCase() + w.slice(1)).join(", ")}`}</div>
         ${d ? `<div>×${d.n} · 🏆 ${d.best} kg</div>` : ""}</div>`;
     }

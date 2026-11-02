@@ -5,9 +5,9 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 **Play:** https://whipsmartmacoy.github.io/fish-with-friends/ (once GitHub Pages is on — see *Hosting*)
 
 ## Controls
-- **Move:** WASD / arrow keys, or the joystick on phones.
+- **Move:** WASD / arrow keys, or the joystick on phones. The view is **isometric** like Mine with friends, and the stick moves you in screen directions (up = up the screen).
 - **Cast:** face the water and **hold Space** (or the 🎣 button). The power bar swings back and forth. Let go to cast; the dashed square shows where the bobber will land.
-- **Hook:** when the bobber dips and a **!** pops up, tap Space or the **HOOK!** button fast.
+- **Hook:** when a fish bites, a big **!** pops up over your angler's head (and on the bobber). Tap Space or the **HOOK!** button fast.
 - **Reel:** **hold** to raise the green bar and let go to let it sink. Keep the fish inside the bar until the yellow meter fills.
 - **Shops:** walk up to a shop and press Space. **C** opens your cooler, **J** the journal and **Z** changes the zoom.
 
@@ -21,7 +21,11 @@ A co-op fishing game for two players, each on their own device. It's the sister 
   1. Hold **Cast** to charge your throw, then let go.
   2. Tap when the bobber dips to hook the fish.
   3. Hold to keep the reel bar on the fish until you land it.
-- **27 fish** across the pond, river, lake and sea. Some only bite at night or in deep water, and there are 4 legendaries. You can also reel in junk and treasure chests.
+- **27 fish** across the pond, river, lake and sea. Some only bite at night or in deep water. You can also reel in junk and treasure chests.
+- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (8 common, 6 uncommon, 4 rare, 4 epic, 5 legendary).
+  - The reel bar shows a fish's rarity as soon as you hook it.
+  - Catches, the cooler and the journal are colour-coded by rarity.
+  - Better rods, a Shiny Lure, Glow Bait at night and bubbling hot spots all make rarer fish more likely.
 - **Fishing level** goes from 1 to 10 and unlocks rarer fish.
 - **Bubbling hot spots** move every few minutes and make fish bite faster and rarer fish more likely.
 - **Day and night:** one in-game day lasts 12 real minutes.
