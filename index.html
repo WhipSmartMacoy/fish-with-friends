@@ -767,7 +767,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1345";
+const BUILD = "2026.11.02-1400";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -977,9 +977,21 @@ const hostNow = () => Date.now() - clockSkew;
 // Real time of day, in the HOST's time zone, so both anglers share one clock (and the same fish are biting).
 const tzOffset = () => (state && typeof state.tz === "number") ? state.tz : new Date().getTimezoneOffset();
 const hourAt = t => { const local = t - tzOffset() * 60000; return ((local % DAY_MS) + DAY_MS) % DAY_MS / 3600000; };
-const NIGHT_FROM = 20, DAY_FROM = 6;     // night 8 pm – 6 am, day 6 am – 8 pm
-const isNight = t => { const h = hourAt(t); return h >= NIGHT_FROM || h < DAY_FROM; };
-function periodOf(t) { const h = hourAt(t); return h >= 5 && h < 7 ? "Dawn" : h >= 7 && h < 18 ? "Day" : h >= 18 && h < NIGHT_FROM ? "Dusk" : "Night"; }
+const NIGHT_FROM = 18, DAY_FROM = 6;     // day 6 am – 6 pm, night 6 pm – 6 am
+// An Hourglass Charm bends time for the whole lobby: 30 minutes of day or of night.
+const WARP_MS = 30 * 60 * 1000, HOURGLASS_PRICE = 300;
+const timeWarp = t => state && state.warp && t < state.warp.until ? state.warp : null;
+const isNight = t => { const w = timeWarp(t); if (w) return w.mode === "night"; const h = hourAt(t); return h >= NIGHT_FROM || h < DAY_FROM; };
+function periodOf(t) {
+  const w = timeWarp(t); if (w) return w.mode === "night" ? "Night ⏳" : "Day ⏳";
+  const h = hourAt(t); return h >= DAY_FROM && h < 7 ? "Dawn" : h >= 7 && h < 17 ? "Day" : h >= 17 && h < NIGHT_FROM ? "Dusk" : "Night";
+}
+function darknessAt(t) {   // 0 = bright day … .68 = full night
+  const w = timeWarp(t); if (w) return w.mode === "night" ? .68 : 0;
+  const h = hourAt(t), N = .68;
+  return h >= 18.5 || h < 5 ? N : h >= 17 ? (h - 17) / 1.5 * N : h < 6.5 ? (6.5 - h) / 1.5 * N : 0;
+}
+const warpLeft = t => { const w = timeWarp(t); return w ? Math.ceil((w.until - t) / 60000) : 0; };
 function clockText(t) {
   const h = hourAt(t), hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
   const icons = ["🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚"];
@@ -990,7 +1002,7 @@ function clockText(t) {
 // w = how common · d = fight difficulty (1–10) · lvl = fishing level needed · kg = weight range · time: any/day/night
 // shape: std / long / flat (pixel art) or an emoji · col = [body, belly, fin, stripe]
 // Every body of water has its own fish — nothing is shared between the Pond, River, Lake and Sea.
-// rar: 0 Common · 1 Uncommon · 2 Rare · 3 Epic · 4 Legendary   ·  time: "day" (6 am – 8 pm) / "night" (8 pm – 6 am) / any
+// rar: 0 Common · 1 Uncommon · 2 Rare · 3 Epic · 4 Legendary   ·  time: "day" (6 am – 6 pm) / "night" (6 pm – 6 am) / any
 // d = fight difficulty (1–10) · lvl = fishing level needed · kg = weight range · shape: std / long / flat or an emoji · col = [body, belly, fin, stripe]
 const RAR_WEIGHT = [30, 15, 8, 4, 1];
 const FISH = [
@@ -1101,7 +1113,7 @@ let state = null;
 let net = { peer: null, conn: null, isHost: false, seat: 0, code: "", connected: false };
 function newPlayer(i) {
   return { name: i ? "Player 2" : "Player 1", look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down",
-           rod: 0, cooler: 0, items: [], bait: { worms: 5, lure: 0, glow: 0 }, useBait: "worms", xp: 0, caught: 0, best: null, line: null, tp: 0 };
+           rod: 0, cooler: 0, items: [], bait: { worms: 5, lure: 0, glow: 0 }, useBait: "worms", hourglass: 0, xp: 0, caught: 0, best: null, line: null, tp: 0 };
 }
 function newGame() {
   return { v: 1, rodV: 2, players: [newPlayer(0), newPlayer(1)], team: { gold: 50, caught: 0, earned: 0, legends: 0, treasure: 0 }, dex: {}, log: [], created: Date.now() };
@@ -1230,6 +1242,11 @@ function applyAction(seat, a) {
       state.team.gold -= b.price; p.bait[a.id] = (p.bait[a.id] || 0) + b.pack; p.useBait = a.id;
       return { text: `+${b.pack} ${b.icon} ${b.name}`, ok: true, seat, private: true, sfx: "coin" };
     }
+    if (a.what === "hourglass") {
+      if (state.team.gold < HOURGLASS_PRICE) return { text: "Not enough gold in the team stash.", ok: false, seat, private: true };
+      state.team.gold -= HOURGLASS_PRICE; p.hourglass = (p.hourglass || 0) + 1;
+      return { text: `+1 ⏳ Hourglass Charm (you have ${p.hourglass}). Use it from your 🧊 cooler.`, ok: true, seat, private: true, sfx: "coin" };
+    }
     if (a.what === "cooler") {
       const i = p.cooler + 1, c = COOLERS[i]; if (!c) return null;
       if (state.team.gold < c.price) return { text: "Not enough gold in the team stash.", ok: false, seat, private: true };
@@ -1237,6 +1254,17 @@ function applyAction(seat, a) {
       return { text: `Bigger cooler: holds ${c.size} catches now.`, ok: true, seat, private: true, sfx: "coin" };
     }
     return null;
+  }
+  if (a.type === "warp") {
+    if (!(p.hourglass > 0) || (a.mode !== "day" && a.mode !== "night")) return null;
+    p.hourglass--;
+    const cur = state.warp && state.warp.until > now ? state.warp : null;
+    const from = cur && cur.mode === a.mode ? cur.until : now;            // same kind again: stack another 30 minutes
+    state.warp = { mode: a.mode, until: from + WARP_MS, by: p.name };
+    const mins = Math.round((state.warp.until - now) / 60000);
+    const text = a.mode === "night" ? `${p.name} turned the ⏳ Hourglass — 🌙 night for ${mins} minutes! Night fish are biting.` : `${p.name} turned the ⏳ Hourglass — ☀️ daylight for ${mins} minutes! Day fish are biting.`;
+    addLog(text, true);
+    return { text, ok: true, seat, sfx: "rare" };
   }
   if (a.type === "bait") { if (a.id === "none" || BAITS[a.id]) p.useBait = a.id; return { quiet: true, seat }; }
   if (a.type === "release") { const it = p.items[a.i | 0]; if (!it) return null; p.items.splice(a.i | 0, 1); return { text: `Released the ${CATCH[it.id].name}. 🌊`, ok: true, seat, private: true }; }
@@ -2016,7 +2044,7 @@ function draw(now) {
     ctx.globalAlpha = 1 - t * t; label(f.text, P.x, P.y - 20 - t * 40, f.color || "#fff", 13); ctx.globalAlpha = 1;
   }
   // night: darken, with a warm glow around you
-  const h = hourAt(hn), dark = h >= 20.5 || h < 5 ? .68 : h >= 18.5 ? (h - 18.5) / 2 * .68 : h < 7 ? (7 - h) / 2 * .68 : 0;
+  const dark = darknessAt(hn);
   if (dark > 0) {
     ctx.save(); ctx.globalCompositeOperation = "multiply";
     const F = feet(net.seat), gr = ctx.createRadialGradient(F.x, F.y - 30, 40, F.x, F.y - 30, 230);
@@ -2220,10 +2248,11 @@ function tickLocal(dt, now) {
   updateActLabel(me, hn);
   if (now - lastHud > 1000) {
     lastHud = now;
-    const el = document.getElementById("hud-time"); el.textContent = `${clockText(hn)} ${periodOf(hn)}`;
-    el.title = "Real time (the host's clock). Night fish bite 8 pm – 6 am, day fish 6 am – 8 pm.";
+    const el = document.getElementById("hud-time"), wl = warpLeft(hn);
+    el.textContent = `${clockText(hn)} ${periodOf(hn)}${wl ? ` ${wl}m` : ""}`;
+    el.title = wl ? `An Hourglass Charm is holding ${timeWarp(hn).mode === "night" ? "night" : "day"} for ${wl} more minute${wl === 1 ? "" : "s"}.` : "Real time (the host's clock). Day fish bite 6 am – 6 pm, night fish 6 pm – 6 am.";
     const night = isNight(hn);
-    if (lastNight !== null && night !== lastNight) toast(night ? "🌙 Night has fallen — night fish are biting!" : "☀️ The sun is up — day fish are biting!", "ok", 6000);
+    if (lastNight !== null && night !== lastNight && !timeWarp(hn)) toast(night ? "🌙 Night has fallen — night fish are biting!" : "☀️ The sun is up — day fish are biting!", "ok", 6000);
     lastNight = night;
   }
 }
@@ -2502,6 +2531,10 @@ function renderMenu() {
     h += `<div class="opt-title" style="margin-top:10px">Bait (packs of 10)</div>`;
     for (const [id, b] of Object.entries(BAITS))
       h += row(b.icon, `${b.name} <small style="display:inline;color:var(--gold)">you have ${me.bait[id] || 0}</small>`, b.desc, `<button class="btn-gold" data-buy="bait" data-id="${id}" ${gold < b.price ? "disabled" : ""}>💰${b.price}</button>`);
+    h += `<div class="opt-title" style="margin-top:10px">Charms</div>`;
+    h += row("⏳", `Hourglass Charm <small style="display:inline;color:var(--gold)">you have ${me.hourglass || 0}</small>`,
+      "Turn it in your cooler to make it ☀️ day or 🌙 night for 30 minutes — for both of you. Use two to stack an hour.",
+      `<button class="btn-gold" data-buy="hourglass" ${gold < HOURGLASS_PRICE ? "disabled" : ""}>💰${HOURGLASS_PRICE}</button>`);
     h += `<div class="opt-title" style="margin-top:10px">Cooler</div>`;
     const nx = COOLERS[me.cooler + 1];
     h += row("🧊", nx ? `Bigger cooler (${nx.size} slots)` : "Biggest cooler", `Yours holds ${COOLERS[me.cooler].size} catches.`, nx ? `<button class="btn-gold" data-buy="cooler" ${gold < nx.price ? "disabled" : ""}>💰${nx.price.toLocaleString()}</button>` : "");
@@ -2514,6 +2547,10 @@ function renderMenu() {
                              : `${me.items.length}/${COOLERS[me.cooler].size} slots · worth about 💰${total} at the 🐟 Fish Market`;
     let h = "";
     if (!selling) {
+      const hn = hostNow(), w = timeWarp(hn), has = (me.hourglass || 0) > 0;
+      if (has || w) h += row("⏳", `Hourglass Charm ×${me.hourglass || 0}`,
+        w ? `Holding ${w.mode === "night" ? "🌙 night" : "☀️ day"} for ${warpLeft(hn)} more min (turned by ${esc(w.by)}).` : "30 minutes of day or night for the whole lobby.",
+        `<span style="display:flex;gap:6px"><button data-warp="day" ${has ? "" : "disabled"}>☀️ Day</button><button data-warp="night" ${has ? "" : "disabled"}>🌙 Night</button></span>`);
       h += `<div class="opt-title">Bait on your hook</div><div class="choices" style="margin-bottom:10px">` +
         [["none", "🪝 None"], ...Object.entries(BAITS).map(([id, b]) => [id, `${b.icon} ${b.name} ×${me.bait[id] || 0}`])].map(([id, t]) =>
           `<button class="style ${me.useBait === id ? "on" : ""}" data-bait="${id}" ${id !== "none" && !(me.bait[id] > 0) ? "disabled" : ""}>${t}</button>`).join("") + `</div>`;
@@ -2530,7 +2567,7 @@ function renderMenu() {
     title.textContent = "📖 Fish journal";
     const seen = FISH.filter(f => state.dex[f.id]).length;
     const nightNow = isNight(hostNow());
-    note.innerHTML = `<b>${clockText(hostNow())} · ${periodOf(hostNow())}</b> — ${nightNow ? "🌙 night fish are biting (until 6 am)" : "☀️ day fish are biting (until 8 pm)"}. Bubbling spots move every half hour.<br>${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}`;
+    note.innerHTML = `<b>${clockText(hostNow())} · ${periodOf(hostNow())}</b> — ${(timeWarp(hostNow()) ? `⏳ an Hourglass is holding ${nightNow ? "🌙 night" : "☀️ day"} for ${warpLeft(hostNow())} more min` : nightNow ? "🌙 night fish are biting (until 6 am)" : "☀️ day fish are biting (until 6 pm)")}. Bubbling spots move every half hour.<br>${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}`;
     const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Ocean"]];
     let h = `<div class="tabs">${tabs.map(([k, t]) => `<button class="${journalTab === k ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</div><div class="dex">`;
     for (const f of FISH.filter(f => journalTab === "all" || f.water.includes(journalTab))) {
@@ -2553,6 +2590,7 @@ document.getElementById("menu-body").addEventListener("click", e => {
   else if ("sellall" in b.dataset) sendAction({ type: "sell", all: true });
   else if (b.dataset.release) sendAction({ type: "release", i: +b.dataset.release });
   else if (b.dataset.bait) sendAction({ type: "bait", id: b.dataset.bait });
+  else if (b.dataset.warp) sendAction({ type: "warp", mode: b.dataset.warp });
   else if (b.dataset.tab) { journalTab = b.dataset.tab; renderMenu(); }
 });
 
