@@ -36,7 +36,23 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 - **Day and night:** one in-game day lasts 12 real minutes.
 - **Shops:**
   - 🐟 **Fish Market:** sell your catch (bigger fish are worth more) into the shared **team stash**.
-  - 🎣 **Tackle Shop:** rods (longer casts and an easier reel), bait (Worms, Shiny Lure, Glow Bait) and bigger coolers.
+  - 🎣 **Tackle Shop:** rods, bait (Worms, Shiny Lure, Glow Bait) and bigger coolers.
+- **8 rod tiers.** You upgrade them in order, and the better ones need a higher fishing level:
+
+  | Rod | Rarity | Reach | Luck | Control | Fishing level | Price |
+  |---|---|---|---|---|---|---|
+  | Wood | Common | 3 | +0% | +0% | 1 | free |
+  | Bronze | Common | 3 | +9% | +8% | 1 | 150 |
+  | Iron | ◆ Uncommon | 4 | +18% | +16% | 2 | 400 |
+  | Steel | ◆ Uncommon | 4 | +27% | +23% | 3 | 900 |
+  | Silver | ◆◆ Rare | 5 | +36% | +31% | 4 | 1,800 |
+  | Gold | ◆◆◆ Epic | 5 | +45% | +39% | 6 | 3,600 |
+  | Diamond | ◆◆◆ Epic | 6 | +54% | +47% | 8 | 7,000 |
+  | Mythril | ★ Legendary | 7 | +63% | +55% | 9 | 13,000 |
+
+  - **Luck** means rarer fish, less junk, more treasure and quicker bites.
+  - **Control** means wider green zones on the dial, a slower needle and less line strain from snags and misses.
+  - Gold rods and up glint in your hands.
 - **Fish journal:** tracks every species and the record weight for each one, with team milestones.
 
 ## UI and scaling (carried over from Mine with friends)

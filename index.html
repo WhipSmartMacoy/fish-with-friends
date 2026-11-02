@@ -128,6 +128,7 @@
   .dex .cell.unseen { --rc: transparent !important; }
   .rtag { display: inline-block; font-size: .68rem; font-weight: bold; padding: 0 6px; border-radius: 6px; background: #0008; color: var(--rc); border: 1px solid var(--rc); text-shadow: none; vertical-align: middle; }
   .mrow.rar { box-shadow: inset 3px 0 0 var(--rc); }
+  .rodic { width: 20px; height: 20px; image-rendering: pixelated; vertical-align: middle; }
   .chat { grid-area: chat; display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 6px; min-height: 0; }
   .chat-log { font-size: .88rem; max-height: 72px; overflow-y: auto; min-height: 20px; }
   .chat-log .who0 { color: var(--p1); } .chat-log .who1 { color: var(--p2); }
@@ -766,7 +767,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1215";
+const BUILD = "2026.11.02-1300";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1034,13 +1035,30 @@ const RARITY = [
 for (const f of FISH) f.rarity = f.legend ? 4 : f.w >= 24 ? 0 : f.w >= 12 ? 1 : f.w >= 7 ? 2 : 3;
 for (const f of JUNK) f.rarity = f.treasure ? 3 : 0;
 const rarityOf = id => RARITY[(CATCH[id] || {}).rarity || 0];
+// Eight rod tiers, each with a rarity like the fish. Power drives luck (rarer bites, less junk, quicker bites)
+// and control (wider green zones, a slower needle and less strain from snags on the dial).
 const RODS = [
-  { name: "Twig Rod",       reach: 3, price: 0,    power: 0, icon: "🪵" },
-  { name: "Bamboo Rod",     reach: 4, price: 200,  power: 1, icon: "🎋" },
-  { name: "Fiberglass Rod", reach: 5, price: 800,  power: 2, icon: "🎣" },
-  { name: "Carbon Rod",     reach: 6, price: 2500, power: 3, icon: "⚫" },
-  { name: "Golden Rod",     reach: 7, price: 8000, power: 4, icon: "🌟" },
+  { name: "Wood Rod",    tier: 0, reach: 3, power: 0,   price: 0,     lvl: 1, col: "#a0703c", dark: "#6a4422", grip: "#5a3418" },
+  { name: "Bronze Rod",  tier: 0, reach: 3, power: .6,  price: 150,   lvl: 1, col: "#c8823e", dark: "#8a5222", grip: "#5a3418" },
+  { name: "Iron Rod",    tier: 1, reach: 4, power: 1.2, price: 400,   lvl: 2, col: "#b8bcc4", dark: "#70747c", grip: "#4a3a30" },
+  { name: "Steel Rod",   tier: 1, reach: 4, power: 1.8, price: 900,   lvl: 3, col: "#8aa8c8", dark: "#4a6078", grip: "#2a2a34" },
+  { name: "Silver Rod",  tier: 2, reach: 5, power: 2.4, price: 1800,  lvl: 4, col: "#eef4fa", dark: "#9aa6b4", grip: "#3a4a8a" },
+  { name: "Gold Rod",    tier: 3, reach: 5, power: 3,   price: 3600,  lvl: 6, col: "#ffd23f", dark: "#b88a10", grip: "#7a2a2a" },
+  { name: "Diamond Rod", tier: 3, reach: 6, power: 3.6, price: 7000,  lvl: 8, col: "#8ff0ff", dark: "#3aa8c8", grip: "#2a3a5a" },
+  { name: "Mythril Rod", tier: 4, reach: 7, power: 4.2, price: 13000, lvl: 9, col: "#b98bff", dark: "#6a3ac8", grip: "#1a1430" },
 ];
+const rodLuck = r => Math.round(r.power * 15), rodControl = r => Math.round(r.power * 13);
+const rodArtCache = {};
+function rodArt(i) {      // a little pixel rod for the shop, the HUD and the stats panel
+  if (rodArtCache[i]) return rodArtCache[i];
+  const r = RODS[i], g = Array.from({ length: 16 }, () => Array(16).fill("."));
+  for (let k = 0; k <= 12; k++) { const x = 2 + k, y = 13 - k; g[y][x] = k < 4 ? "G" : "R"; if (y + 1 < 16 && k >= 4) g[y + 1][x] = "r"; }
+  for (const [x, y] of [[5, 11], [6, 11], [5, 12], [6, 12]]) g[y][x] = "S";
+  g[1][14] = "T"; g[0][15] = "T";
+  const c = paint(g.map(row => row.join("")), { K: "#1a1424", R: r.col, r: r.dark, G: r.grip, S: "#c8ccd4", T: r.tier >= 3 ? "#ffffff" : r.dark }, { passes: 1 });
+  return (rodArtCache[i] = { canvas: c, url: c.toDataURL() });
+}
+const rodIcon = (i, cls = "rodic") => `<img class="${cls}" src="${rodArt(i).url}" alt="">`;
 const BAITS = {
   worms: { name: "Worms",       icon: "🪱", pack: 10, price: 20,  desc: "Fish bite much sooner." },
   lure:  { name: "Shiny Lure",  icon: "✨", pack: 10, price: 60,  desc: "Rare fish are twice as likely." },
@@ -1070,11 +1088,12 @@ function newPlayer(i) {
            rod: 0, cooler: 0, items: [], bait: { worms: 5, lure: 0, glow: 0 }, useBait: "worms", xp: 0, caught: 0, best: null, line: null, tp: 0 };
 }
 function newGame() {
-  return { v: 1, players: [newPlayer(0), newPlayer(1)], team: { gold: 50, caught: 0, earned: 0, legends: 0, treasure: 0 }, dex: {}, log: [], created: Date.now() };
+  return { v: 1, rodV: 2, players: [newPlayer(0), newPlayer(1)], team: { gold: 50, caught: 0, earned: 0, legends: 0, treasure: 0 }, dex: {}, log: [], created: Date.now() };
 }
 function migrate(s) {
   const g = newGame();
-  const out = { ...g, ...s, team: { ...g.team, ...(s.team || {}) }, dex: s.dex || {}, log: s.log || [] };
+  if (s && s.players && !s.rodV) s.players.forEach(p => { if (p && typeof p.rod === "number") p.rod = [0, 1, 3, 4, 5][p.rod] ?? 0; });   // old 5-rod saves
+  const out = { ...g, ...s, rodV: 2, team: { ...g.team, ...(s.team || {}) }, dex: s.dex || {}, log: s.log || [] };
   out.players = [0, 1].map(i => {
     const p = { ...newPlayer(i), ...((s.players || [])[i] || {}) };
     p.bait = { ...newPlayer(i).bait, ...(p.bait || {}) };
@@ -1182,10 +1201,11 @@ function applyAction(seat, a) {
     if (a.what === "rod") {
       const i = a.i | 0, r = RODS[i];
       if (!r || i !== p.rod + 1) return null;
+      if (levelOf(p.xp) < r.lvl) return { text: `The ${r.name} needs fishing level ${r.lvl}.`, ok: false, seat, private: true };
       if (state.team.gold < r.price) return { text: "Not enough gold in the team stash.", ok: false, seat, private: true };
       state.team.gold -= r.price; p.rod = i;
-      const text = `${p.name} bought the ${r.name}! Casts reach ${r.reach} tiles.`; addLog(text, true);
-      return { text, ok: true, seat, sfx: "coin" };
+      const text = `${p.name} upgraded to the ${RARITY[r.tier].gem ? RARITY[r.tier].gem + " " : ""}${r.name}! Reach ${r.reach} · Luck +${rodLuck(r)}% · Control +${rodControl(r)}%`; addLog(text, true);
+      return { text, ok: true, seat, sfx: r.tier >= 3 ? "legend" : "rare", rarity: r.tier };
     }
     if (a.what === "bait") {
       const b = BAITS[a.id]; if (!b) return null;
@@ -1675,8 +1695,16 @@ function drawRod(seat) {
   const charging = (seat === net.seat && fishing.phase === "charge") || (seat !== net.seat && p.anim === 1);
   if (!p.line && !charging) return;
   const H = rodHand(seat), tip = rodTip(seat);
-  ctx.strokeStyle = ["#8a5a2a", "#c8b060", "#e8e8f0", "#2a2a30", "#ffd040"][p.rod]; ctx.lineWidth = 3; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(H.x, H.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+  const r = RODS[p.rod] || RODS[0];
+  ctx.lineCap = "round";
+  ctx.strokeStyle = r.dark; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(H.x, H.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+  ctx.strokeStyle = r.col; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(H.x, H.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+  ctx.strokeStyle = r.grip; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(H.x, H.y); ctx.lineTo(H.x + (tip.x - H.x) * .2, H.y + (tip.y - H.y) * .2); ctx.stroke();
+  if (r.tier >= 3) {                                    // Epic and Legendary rods glint
+    const t = performance.now() / 300, k = (Math.sin(t) + 1) / 2, gx = H.x + (tip.x - H.x) * k, gy = H.y + (tip.y - H.y) * k;
+    ctx.fillStyle = r.tier >= 4 ? "rgba(230,200,255,.95)" : "rgba(255,255,255,.9)"; ctx.fillRect(gx - 1.5, gy - 1.5, 3, 3);
+    ctx.fillStyle = r.col; ctx.globalAlpha = .5; ctx.beginPath(); ctx.arc(tip.x, tip.y, 3.5 + Math.sin(t * 1.7), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  }
 }
 const biting = (L, hn = hostNow()) => L && !L.hooked && hn >= L.biteAt && hn < L.biteAt + L.win;
 function bobberPos(seat, now) {
@@ -2182,7 +2210,7 @@ const angDiff = (a, b) => ((a - b) % TAU + TAU * 1.5) % TAU - Math.PI;
 function startReel(L) {
   const me = state.players[net.seat], f = CATCH[L.fish], r = f.rarity || 0, lvl = levelOf(me.xp), rod = RODS[me.rod];
   const R = {
-    id: L.id, fish: L.fish, r, d: f.d, t: 0, ang: Math.random() * TAU, dir: 1,
+    id: L.id, fish: L.fish, r, d: f.d, t: 0, rodPow: rod.power, ang: Math.random() * TAU, dir: 1,
     speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - rod.power * .05),          // radians per second
     green: clamp(.8 - r * .09 - f.d * .012 + rod.power * .06 + lvl * .01, .36, .9),  // width of a catch zone (radians)
     need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0), got: 0, strain: 0, zones: [], fx: [],
@@ -2231,11 +2259,11 @@ function dialTap() {
     R.fx.push({ text: perfect ? "Perfect!" : "Nice!", col: perfect ? "#ffe070" : "#9af08a", t0: R.t, ring: "#9af08a" });
     sfx(perfect ? "perfect" : "hit");
   } else if (z && z.kind === "red") {
-    R.strain += .42; R.got = Math.max(0, R.got - 1);
+    R.strain += .42 * (1 - R.rodPow * .07); R.got = Math.max(0, R.got - 1);
     R.fx.push({ text: "Snagged!", col: "#ff8a7a", t0: R.t, ring: "#ff5a4a" });
     sfx("snag"); try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch {}
   } else {
-    R.strain += .16;
+    R.strain += .16 * (1 - R.rodPow * .07);
     R.fx.push({ text: "Miss", col: "#bfe0f4", t0: R.t });
     sfx("miss");
   }
@@ -2410,7 +2438,7 @@ function renderSide() {
     const best = p.best && CATCH[p.best.id] ? `${CATCH[p.best.id].name} ${p.best.kg} kg` : "—";
     el.innerHTML = `<h3>${i ? "🟠" : "🔵"} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}</h3>
       <div class="stats"><div>🎣 Lv <b>${levelOf(p.xp)}</b></div><div>🐟 <b>${p.caught}</b> caught</div>
-      <div>${RODS[p.rod].icon} ${RODS[p.rod].name}</div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
+      <div style="color:${RARITY[RODS[p.rod].tier].col}">${rodIcon(p.rod)} ${RODS[p.rod].name}</div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
       <div style="grid-column:span 2">🏆 Best: ${esc(best)}</div></div>`;
   });
   const seen = FISH.filter(f => state.dex[f.id]).length;
@@ -2433,11 +2461,16 @@ function renderMenu() {
   const title = document.getElementById("menu-title"), note = document.getElementById("menu-note"), body = document.getElementById("menu-body");
   const row = (ic, name, sub, btn, rc) => `<div class="mrow${rc ? " rar" : ""}" ${rc ? `style="--rc:${rc}"` : ""}><div class="ic">${ic}</div><div class="txt"><b>${name}</b><small>${sub}</small></div>${btn || ""}</div>`;
   if (menuKind === "tackle") {
-    title.textContent = "🎣 Tackle Shop"; note.innerHTML = `“Better gear, bigger fish!” — Reel Rita · Team stash: 💰<b>${gold.toLocaleString()}</b>`;
+    title.textContent = "🎣 Tackle Shop"; note.innerHTML = `“Better gear, bigger fish!” — Reel Rita · Team stash: 💰<b>${gold.toLocaleString()}</b><br>Rods upgrade in order. <b>Luck</b>: rarer fish, less junk, quicker bites. <b>Control</b>: wider green zones, a slower needle, less strain from snags.`;
     let h = `<div class="opt-title">Rods</div>`;
+    const lvl = levelOf(me.xp);
     RODS.forEach((r, i) => {
-      const btn = i <= me.rod ? `<button disabled>${i === me.rod ? "Equipped" : "Owned"}</button>` : i === me.rod + 1 ? `<button class="btn-gold" data-buy="rod" data-i="${i}" ${gold < r.price ? "disabled" : ""}>💰${r.price.toLocaleString()}</button>` : `<button disabled>🔒</button>`;
-      h += row(r.icon, r.name, `Casts ${r.reach} tiles${r.power ? ` · easier reeling · rarer catches` : " · where everyone starts"}`, btn);
+      const rr = RARITY[r.tier], tooLow = lvl < r.lvl;
+      const btn = i <= me.rod ? `<button disabled>${i === me.rod ? "Equipped" : "Owned"}</button>`
+        : i === me.rod + 1 ? (tooLow ? `<button disabled>🔒 Lv ${r.lvl}</button>` : `<button class="btn-gold" data-buy="rod" data-i="${i}" ${gold < r.price ? "disabled" : ""}>💰${r.price.toLocaleString()}</button>`)
+        : `<button disabled>🔒 ${r.price.toLocaleString()}</button>`;
+      const stats = `🎯 Reach ${r.reach} · 🍀 Luck +${rodLuck(r)}% · 🎛️ Control +${rodControl(r)}%${r.lvl > 1 ? ` · Lv ${r.lvl}+` : ""}`;
+      h += row(rodIcon(i, ""), `${r.name} <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`, stats, btn, rr.col);
     });
     h += `<div class="opt-title" style="margin-top:10px">Bait (packs of 10)</div>`;
     for (const [id, b] of Object.entries(BAITS))
