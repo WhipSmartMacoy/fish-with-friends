@@ -137,12 +137,12 @@
   .rodic { width: 20px; height: 20px; image-rendering: pixelated; vertical-align: middle; }
   .chat { grid-area: chat; display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 6px; min-height: 0; }
   .chat-log { font-size: .88rem; max-height: 72px; overflow-y: auto; min-height: 20px; }
-  .chat-log .who0 { color: var(--p1); } .chat-log .who1 { color: var(--p2); }
+  .chat-log .who0 { color: #8fd0ff; } .chat-log .who1 { color: #ffb08a; } .chat-log .who2 { color: #9af08a; } .chat-log .who3 { color: #e0a0ff; }
   .chat-form { display: flex; gap: 6px; }
   .chat-form input { flex: 1; min-width: 0; font-family: inherit; font-size: 16px; padding: 6px 9px; border-radius: 8px; border: 2px solid var(--line); background: #0e2a4a; color: #fff; }
   .side { grid-area: side; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
   .side-head { display: none; justify-content: space-between; align-items: center; }
-  .player.p1 { border-color: var(--p1); } .player.p2 { border-color: var(--p2); }
+  .player { border-color: var(--pc, #f4ecd0); }
   .player h3 { margin: 0 0 4px; font-size: 1rem; }
   .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; font-size: .82rem; }
   .stats div { background: var(--panel2); border-radius: 7px; padding: 3px 7px; }
@@ -325,7 +325,7 @@
 <body>
 <header>
   <h1>🎣 Fish with friends</h1>
-  <p>Team up with a friend: cast a line at the pond, river, lake and ocean — and fill the journal together.</p>
+  <p>Team up with up to 3 friends: cast a line at the pond, river, lake and ocean — and fill the journal together.</p>
 </header>
 
 <main class="screens">
@@ -412,8 +412,7 @@
     </div>
     <aside class="side" id="side">
       <div class="side-head"><h3 style="margin:0">📊 Stats</h3><button id="close-side">✕ Close</button></div>
-      <div class="card player p1" id="player-0"></div>
-      <div class="card player p2" id="player-1"></div>
+      <div id="players-box" style="display:flex;flex-direction:column;gap:8px"></div>
       <div class="card">
         <h3>🤝 Team progress</h3>
         <div class="stats" id="team-stats"></div>
@@ -441,7 +440,7 @@
   <div class="bigmap-head"><b>🗺️ Map</b><span id="bigmap-time"></span></div>
   <button class="bigmap-x" id="bigmap-x" aria-label="Close map">✕</button>
   <div class="bigmap-zoom"><span>－</span><input type="range" id="bigmap-zoom" min="1" max="6" step="0.1" value="2"><span>＋</span><button id="bigmap-me" title="Centre on me">📍</button></div>
-  <div class="bigmap-key">🔵 you · 🟠 friend · ⚪ bubbling spot · drag to look around</div>
+  <div class="bigmap-key" id="bigmap-key">⚪ bubbling spot · drag to look around</div>
 </div>
 <div class="fjoy" id="fjoy" aria-hidden="true"><div class="fjoy-knob" id="fjoy-knob"></div></div>
 <input type="file" id="import-file" accept=".json,application/json" class="hidden">
@@ -463,9 +462,11 @@ const LOOK_KEYS = Object.keys(LOOKS);
 const DEFAULT_LOOKS = [
   { skin: 1, hairStyle: 0, hairColor: 1, hatStyle: 1, hatColor: 0, shirt: 0, pants: 0, shoes: 0, pet: 1 },
   { skin: 3, hairStyle: 1, hairColor: 0, hatStyle: 2, hatColor: 0, shirt: 1, pants: 1, shoes: 1, pet: 2 },
+  { skin: 0, hairStyle: 2, hairColor: 3, hatStyle: 3, hatColor: 7, shirt: 3, pants: 2, shoes: 2, pet: 1 },
+  { skin: 4, hairStyle: 0, hairColor: 6, hatStyle: 1, hatColor: 6, shirt: 4, pants: 3, shoes: 3, pet: 2 },
 ];
 function cleanLook(l, seat = 0) {
-  const out = { ...DEFAULT_LOOKS[seat] };
+  const out = { ...DEFAULT_LOOKS[seat % DEFAULT_LOOKS.length] };
   if (l && typeof l === "object") {
     for (const k of LOOK_KEYS) {
       const v = Math.floor(Number(l[k]));
@@ -866,7 +867,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1615";
+const BUILD = "2026.11.02-1645";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -973,7 +974,13 @@ const BUILDINGS = [
   { id: "tackle", name: "Tackle Shop",   x: 13, y: 26, w: 4, h: 3, sign: "🎣", act: "🛒<br>Shop",    roof: "#3a6ac2" },
   { id: "market", name: "Fish Market",   x: 19, y: 26, w: 4, h: 3, sign: "🐟", act: "💰<br>Sell",    roof: "#3aa27a", stall: true },
 ];
-const SPAWNS = [{ x: 9.5, y: 30.5 }, { x: 11.5, y: 30.5 }];
+// Up to four anglers. A room starts with just the host and grows as friends join.
+const MAX_PLAYERS = 4;
+const SPAWNS = [{ x: 9.5, y: 30.5 }, { x: 11.5, y: 30.5 }, { x: 13.5, y: 30.5 }, { x: 15.5, y: 30.5 }];
+const SEAT_COL = ["#8fd0ff", "#ffb08a", "#9af08a", "#e0a0ff"], SEAT_ICON = ["🔵", "🟠", "🟢", "🟣"];
+const CID_KEY = "fwf-cid";
+const CID = window.FWF_CID || readJSONEarly(CID_KEY) || (() => { const c = Math.random().toString(36).slice(2, 12); try { localStorage.setItem(CID_KEY, JSON.stringify(c)); } catch {} return c; })();
+function readJSONEarly(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 const SHOPKEEPS = {
   tackle: { name: "Reel Rita", look: { skin: 2, hairStyle: 1, hairColor: 4, hatStyle: 1, hatColor: 3, shirt: 3, pants: 1, shoes: 0, pet: 0 } },
   market: { name: "Monger Moe", look: { skin: 4, hairStyle: 3, hairColor: 5, hatStyle: 2, hatColor: 4, shirt: 5, pants: 0, shoes: 1, pet: 0 } },
@@ -1073,17 +1080,18 @@ const depthAt = (x, y) => inMap(x, y) ? depth[idx(x, y)] : 0;
 // Ripply "hot spots" move every few minutes; both players see the same ones (they're picked from the clock).
 const HOT_MS = 30 * 60 * 1000;          // bubbling spots move on the hour and half hour
 const hotCache = new Map();
+// more anglers → more bubbling spots (one extra per friend online, spread over the waters)
 function hotSpots(t) {
-  const win = Math.floor(t / HOT_MS);
-  if (hotCache.has(win)) return hotCache.get(win);
+  const win = Math.floor(t / HOT_MS), extra = (typeof onlineCount === "function" ? onlineCount() : 1) - 1, key = win + ":" + extra;
+  if (hotCache.has(key)) return hotCache.get(key);
   const out = [];
-  for (const kind of [T.POND, T.RIVER, T.LAKE, T.OCEAN]) {
+  for (const [wi, kind] of [T.POND, T.RIVER, T.LAKE, T.OCEAN].entries()) {
     const cands = [];
     for (let i = 0; i < tiles.length; i++) if (tiles[i] === kind) cands.push(i);
-    const n = kind === T.POND ? 1 : 2;
+    const n = (kind === T.POND ? 1 : 2) + (extra > 0 && [1, 2, 3, 0][wi] < extra ? 1 : 0) + (extra >= 3 && kind === T.OCEAN ? 1 : 0);
     for (let k = 0; k < n; k++) { const i = cands[Math.floor(hash2(win, kind, k + 50) * cands.length)]; out.push({ x: i % MW, y: (i / MW) | 0 }); }
   }
-  hotCache.clear(); hotCache.set(win, out);
+  hotCache.clear(); hotCache.set(key, out);
   return out;
 }
 const nearHot = (x, y, t) => hotSpots(t).some(h => Math.abs(h.x - x) <= 1 && Math.abs(h.y - y) <= 1);
@@ -1229,20 +1237,25 @@ function priceOf(item) {
 
 // ================= Game state (the host's copy is the truth) =================
 let state = null;
-let net = { peer: null, conn: null, isHost: false, seat: 0, code: "", connected: false };
+let net = { peer: null, conn: null, conns: new Map(), isHost: false, seat: 0, code: "", connected: false };
+const online = i => !!state && !!state.players[i] && (i === net.seat || !!state.players[i].online);
+const onlineCount = () => state ? state.players.filter((p, i) => online(i)).length : 1;
 function newPlayer(i) {
-  return { name: i ? "Player 2" : "Player 1", look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down",
+  return { name: "Player " + (i + 1), look: DEFAULT_LOOKS[i], x: SPAWNS[i].x, y: SPAWNS[i].y, dir: "down", cid: null, online: false,
            rod: 0, cooler: 0, items: [], bait: { worms: 5, lure: 0, glow: 0 }, useBait: "worms", hourglass: 0, xp: 0, caught: 0, best: null, line: null, tp: 0 };
 }
 function newGame() {
-  return { v: 1, rodV: 2, players: [newPlayer(0), newPlayer(1)], team: { gold: 50, caught: 0, earned: 0, legends: 0, treasure: 0 }, dex: {}, log: [], created: Date.now() };
+  return { v: 1, rodV: 2, players: [newPlayer(0)], team: { gold: 50, caught: 0, earned: 0, legends: 0, treasure: 0 }, dex: {}, log: [], created: Date.now() };
 }
 function migrate(s) {
   const g = newGame();
   if (s && s.players && !s.rodV) s.players.forEach(p => { if (p && typeof p.rod === "number") p.rod = [0, 1, 3, 4, 5][p.rod] ?? 0; });   // old 5-rod saves
   const out = { ...g, ...s, rodV: 2, team: { ...g.team, ...(s.team || {}) }, dex: s.dex || {}, log: s.log || [] };
-  out.players = [0, 1].map(i => {
-    const p = { ...newPlayer(i), ...((s.players || [])[i] || {}) };
+  // old two-player saves kept an untouched "Player 2" seat: drop seats nobody has ever used
+  const src = (s.players || []).filter(Boolean).slice(0, MAX_PLAYERS).filter((p, i) => i === 0 || p.cid || p.xp > 0 || p.caught > 0 || (p.items || []).length);
+  if (!src.length) src.push({});
+  out.players = src.map((sp, i) => {
+    const p = { ...newPlayer(i), ...sp };
     p.bait = { ...newPlayer(i).bait, ...(p.bait || {}) };
     p.items = (p.items || []).filter(it => it && CATCH[it.id]);
     if (!walkable(p.x, p.y)) Object.assign(p, SPAWNS[i]);
@@ -1340,8 +1353,10 @@ function applyAction(seat, a) {
     let gold = 0, n = 0, last = "";
     for (const i of list.sort((x, y) => y - x)) { const it = p.items[i]; if (!it) continue; gold += priceOf(it); n++; last = CATCH[it.id].name; p.items.splice(i, 1); }
     if (!n) return null;
+    const party = onlineCount() - 1, bonus = Math.round(gold * party * .05);   // +5% for every extra angler online
+    gold += bonus;
     state.team.gold += gold; state.team.earned += gold;
-    const text = n === 1 ? `${p.name} sold a ${last} for 💰${gold}.` : `${p.name} sold ${n} catches for 💰${gold}.`;
+    const text = (n === 1 ? `${p.name} sold a ${last} for 💰${gold}` : `${p.name} sold ${n} catches for 💰${gold}`) + (bonus ? ` (party bonus +${bonus})` : "") + ".";
     addLog(text, true);
     return { text, ok: true, seat, sfx: "coin" };
   }
@@ -1458,8 +1473,9 @@ function lobbyMsg(text, bad) { const el = document.getElementById("lobby-msg"); 
 function myName() { return document.getElementById("my-name").value.trim().slice(0, 12) || null; }
 function teardown() {
   try { net.conn && net.conn.close(); } catch {}
+  try { net.conns.forEach(c => c.close()); } catch {}
   try { net.peer && net.peer.destroy(); } catch {}
-  net = { peer: null, conn: null, isHost: false, seat: 0, code: "", connected: false };
+  net = { peer: null, conn: null, conns: new Map(), isHost: false, seat: 0, code: "", connected: false };
   clockSkew = 0;
 }
 function recordRecent(code, role) {
@@ -1484,19 +1500,22 @@ function hostLobby(code) {
     state = saved && saved.players ? migrate(saved) : newGame();
     state.players.forEach(p => p.line = null);
     state.tz = new Date().getTimezoneOffset();
-    state.players[0].name = name; state.players[0].look = myLook;
+    state.players[0].name = name; state.players[0].look = myLook; state.players[0].cid = CID;
+    state.players.forEach((p, i) => p.online = i === 0);
     writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), name, lastCode: code });
     recordRecent(code, "host");
     save(); enterGame();
   });
   peer.on("connection", c => {
-    if (net.conn && net.conn.open) {   // only one guest allowed
-      c.on("open", () => { c.send({ type: "full" }); setTimeout(() => c.close(), 300); });
-      return;
-    }
-    net.conn = c;
     c.on("data", msg => onHostData(c, msg));
-    c.on("close", () => { if (net.conn === c) { net.conn = null; state.players[1].line = null; setConnected(false); } });
+    c.on("close", () => {
+      const seat = c._seat;
+      if (seat == null || net.conns.get(seat) !== c) return;
+      net.conns.delete(seat);
+      const p = state.players[seat]; p.online = false; p.line = null;
+      addLog(`${p.name} headed home.`, false);
+      save(); broadcast({ text: `${p.name} left the lobby.`, ok: false, neutral: true });
+    });
   });
   peer.on("error", err => {
     if (err.type === "unavailable-id") {
@@ -1510,33 +1529,52 @@ function hostLobby(code) {
 
 function onHostData(c, msg) {
   if (msg.type === "hello") {
-    if (msg.saved && msg.saved.players && progress(msg.saved) > progress(state)) {
+    const cid = String(msg.cid || "").slice(0, 20) || ("anon" + Math.random());
+    // a friend who's already a sharper fisher than this save (the host lost theirs?) brings the team's progress back
+    if (state.players.length === 1 && msg.saved && msg.saved.players && progress(msg.saved) > progress(state)) {
       const me = state.players[0];
       state = migrate(msg.saved);
-      Object.assign(state.players[0], { x: me.x, y: me.y, dir: me.dir });
+      Object.assign(state.players[0], { x: me.x, y: me.y, dir: me.dir, cid: CID, online: true });
+      state.players.forEach((p, i) => { p.online = i === 0; p.line = null; });
     }
-    state.players.forEach(p => p.line = null);
     state.players[0].name = myName() || state.players[0].name; state.players[0].look = myLook;
-    state.players[1].name = String(msg.name || "Player 2").slice(0, 12);
-    state.players[1].look = cleanLook(msg.look, 1);
-    save(); setConnected(true);
-    broadcast({ text: `${state.players[1].name} joined — let's go fishing!`, ok: true });
-  } else if (msg.type === "chat") {
-    addChat(1, msg.text);
+    // your old seat if you've been here before; else an unclaimed old seat; else a new seat
+    let seat = state.players.findIndex((p, i) => i > 0 && p.cid === cid);
+    if (seat < 0) seat = state.players.findIndex((p, i) => i > 0 && !p.cid && !p.online);
+    if (seat < 0 && state.players.length < MAX_PLAYERS) { seat = state.players.length; state.players.push(newPlayer(seat)); }
+    if (seat < 0) { c.send({ type: "full" }); setTimeout(() => c.close(), 300); return; }
+    const old = net.conns.get(seat); if (old && old !== c) { old._seat = null; try { old.close(); } catch {} }
+    c._seat = seat; net.conns.set(seat, c);
+    const g = state.players[seat];
+    Object.assign(g, { cid, online: true, line: null, name: String(msg.name || "Player " + (seat + 1)).slice(0, 12), look: cleanLook(msg.look, seat) });
+    if (!walkable(g.x, g.y)) Object.assign(g, SPAWNS[seat]);
+    const n = onlineCount();
+    save();
+    broadcast({ text: `${g.name} joined — ${n} anglers fishing!${n > 1 ? ` Party bonus: +${(n - 1) * 5}% at the market.` : ""}`, ok: true });
+    return;
+  }
+  const seat = c._seat;
+  if (seat == null || !state.players[seat]) return;
+  if (msg.type === "chat") {
+    addChat(seat, msg.text);
+    for (const [s2, c2] of net.conns) if (s2 !== seat && c2.open) c2.send({ type: "chat", seat, text: String(msg.text || "").slice(0, 120) });
   } else if (msg.type === "action") {
-    const result = applyAction(1, msg.action);
+    const result = applyAction(seat, msg.action);
     if (result) { save(); broadcast(result); }
   } else if (msg.type === "move") {
-    const g = state.players[1];
+    const g = state.players[seat];
     if (DIRS[msg.dir]) g.dir = msg.dir;
     if (typeof msg.x === "number" && typeof msg.y === "number" && walkable(msg.x, msg.y) && Math.hypot(msg.x - g.x, msg.y - g.y) < 4) { g.x = msg.x; g.y = msg.y; }
     else if ((msg.tp ?? g.tp) !== g.tp) {}
     g.anim = msg.anim || 0;
+    for (const [s2, c2] of net.conns) if (s2 !== seat && c2.open) c2.send({ type: "pos", seat, x: g.x, y: g.y, dir: g.dir, anim: g.anim });
   }
 }
 
 function broadcast(result) {
-  if (net.conn && net.conn.open) net.conn.send({ type: "state", state, result, now: Date.now() });
+  const now = Date.now();
+  for (const [seat, c] of net.conns) if (c.open) c.send({ type: "state", state, result, now, you: seat });
+  setConnected(onlineCount() > 1);
   onResult(result);
 }
 let lastMoveSent = 0, lastMoveKey = "";
@@ -1545,7 +1583,9 @@ function sendMove(force) {
   const key = me.x.toFixed(2) + me.y.toFixed(2) + me.dir + (me.anim || 0);
   if (!force && (key === lastMoveKey || now - lastMoveSent < 70)) return;
   lastMoveKey = key; lastMoveSent = now;
-  if (net.conn && net.conn.open) net.conn.send({ type: net.isHost ? "pos" : "move", seat: net.seat, x: +me.x.toFixed(3), y: +me.y.toFixed(3), dir: me.dir, anim: me.anim || 0 });
+  const msg = { type: net.isHost ? "pos" : "move", seat: net.seat, x: +me.x.toFixed(3), y: +me.y.toFixed(3), dir: me.dir, anim: me.anim || 0 };
+  if (net.isHost) { for (const c of net.conns.values()) if (c.open) c.send(msg); }
+  else if (net.conn && net.conn.open) net.conn.send(msg);
 }
 
 function joinLobby(code) {
@@ -1561,9 +1601,9 @@ function joinLobby(code) {
   peer.on("open", () => {
     const c = peer.connect(PEER_PREFIX + code, { reliable: true });
     net.conn = c;
-    c.on("open", () => c.send({ type: "hello", name, look: myLook, saved: readJSON(saveKey(code)) }));
+    c.on("open", () => c.send({ type: "hello", name, look: myLook, cid: CID, saved: readJSON(saveKey(code)) }));
     c.on("data", msg => {
-      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg("That lobby is full (2 players max).", true); }
+      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg(`That lobby is full (${MAX_PLAYERS} anglers max).`, true); }
       if (msg.type === "pos") {
         const p = state && state.players[msg.seat];
         if (p && msg.seat !== net.seat) Object.assign(p, { x: msg.x, y: msg.y, dir: msg.dir, anim: msg.anim || 0 });
@@ -1573,18 +1613,18 @@ function joinLobby(code) {
       if (msg.type === "state") {
         const first = !net.code;
         if (typeof msg.now === "number") clockSkew = Date.now() - msg.now;
-        const mine = state && state.players[1];
-        state = migrate(msg.state);
-        state.players.forEach((p, i) => { p.line = msg.state.players[i].line || null; });
+        const mine = state && state.players[net.seat];
+        state = msg.state; state.players.forEach(p => { p.items = p.items || []; p.bait = p.bait || {}; });
+        if (typeof msg.you === "number") net.seat = msg.you;
         // keep our own live position (the host's copy can be a step behind) unless the host moved us on purpose
-        if (!first && mine && state.players[1].tp === mine.tp) Object.assign(state.players[1], { x: mine.x, y: mine.y, dir: mine.dir });
+        if (!first && mine && state.players[net.seat] && state.players[net.seat].tp === mine.tp) Object.assign(state.players[net.seat], { x: mine.x, y: mine.y, dir: mine.dir });
         if (first) {
-          net.isHost = false; net.seat = 1; net.code = code;
+          net.isHost = false; net.code = code;
           writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), name, lastCode: code });
           recordRecent(code, "guest");
           enterGame();
         }
-        save(); setConnected(true); onResult(msg.result);
+        save(); setConnected(onlineCount() > 1); onResult(msg.result);
       }
     });
     c.on("close", () => {
@@ -1609,7 +1649,7 @@ function sendAction(action) {
 }
 
 // ---- Chat (with speech bubbles over the angler)
-const bubbles = [null, null];
+const bubbles = [null, null, null, null];
 function addChat(seat, text) {
   text = String(text || "").slice(0, 120).trim();
   if (!text || !state) return;
@@ -1621,8 +1661,9 @@ function addChat(seat, text) {
 }
 function sendChat(text) {
   text = text.trim(); if (!text) return;
-  if (net.isHost) { addChat(0, text); if (net.conn && net.conn.open) net.conn.send({ type: "chat", seat: 0, text }); }
-  else { addChat(1, text); if (net.conn && net.conn.open) net.conn.send({ type: "chat", text }); }
+  addChat(net.seat, text);
+  if (net.isHost) { for (const c of net.conns.values()) if (c.open) c.send({ type: "chat", seat: 0, text }); }
+  else if (net.conn && net.conn.open) net.conn.send({ type: "chat", text });
 }
 
 // ================= Images =================
@@ -1858,8 +1899,8 @@ function screenToTile(px, py) { const X = cam.x0 + px / cam.s, Y = cam.y0 + py /
 const gridToScreenDir = dir => { const [dx, dy] = DIRS[dir] || DIRS.down, sx = dx - dy, sy = (dx + dy) / 2, l = Math.hypot(sx, sy) || 1; return [sx / l, sy / l]; };
 
 // ================= Players, pets, lines =================
-const disp = [null, null];        // smoothed positions for drawing (grid coordinates, feet)
-const walkAnim = [0, 0];
+const disp = [null, null, null, null];        // smoothed positions for drawing (grid coordinates, feet)
+const walkAnim = [0, 0, 0, 0];
 function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].look, seat)); }
 function poseFor(seat, now) {
   const p = state.players[seat], d = disp[seat], spr = playerSprites(seat), set = spr[p.dir] || spr.down;
@@ -1940,16 +1981,16 @@ function drawBiteAlert(i, now) {
 }
 
 // Pets trail a little behind their angler, trot to keep up, and sit beside you while you fish.
-const petPos = [null, null];
-const petHop = [0, 0];
+const petPos = [null, null, null, null];
+const petHop = [0, 0, 0, 0];
 function updatePets(dt) {
-  for (let i = 0; i < 2; i++) {
-    const p = state.players[i], d = disp[i], kind = LOOKS.pet[cleanLook(p.look, i).pet || 0];
-    if (!PET_ART[kind] || !d || (i !== net.seat && !net.connected)) { petPos[i] = null; continue; }
+  for (let i = 0; i < MAX_PLAYERS; i++) {
+    const p = state.players[i], d = disp[i], kind = p && LOOKS.pet[cleanLook(p.look, i).pet || 0];
+    if (!p || !PET_ART[kind] || !d || !online(i)) { petPos[i] = null; continue; }
     const [bx, by] = DIRS[p.dir || "down"];
     let tx = d.x - bx * .75, ty = d.y - by * .75;
     if (p.line) { tx = d.x - by * .7 - bx * .2; ty = d.y + bx * .7 - by * .2; }     // sit to one side while fishing
-    else { tx += (i ? -.25 : .25) * Math.abs(by); ty += (i ? .25 : -.25) * Math.abs(bx); }
+    else { const sd = i % 2 ? -.25 : .25; tx += sd * Math.abs(by); ty -= sd * Math.abs(bx); }
     let q = petPos[i];
     if (!q || Math.hypot(q.x - tx, q.y - ty) > 5) q = petPos[i] = { x: tx, y: ty, flip: false, moving: 0 };
     const dx = tx - q.x, dy = ty - q.y, dist = Math.hypot(dx, dy);
@@ -2093,7 +2134,7 @@ function draw(now) {
   const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now;
   if (!state || !document.body.classList.contains("ingame")) return;
   tickLocal(dt, now);
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < state.players.length; i++) {
     const p = state.players[i];
     if (!disp[i] || Math.hypot(disp[i].x - p.x, disp[i].y - p.y) > 4) disp[i] = { x: p.x, y: p.y, moving: false };
     const d = disp[i];
@@ -2144,8 +2185,8 @@ function draw(now) {
       ctx.beginPath(); ctx.arc(bx, by, 2 + t * 4, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  const seen = i => i === net.seat || net.connected;
-  for (let i = 0; i < 2; i++) if (state.players[i].line && seen(i)) drawBobber(i, now);
+  const seen = online, NP = state.players.length;
+  for (let i = 0; i < NP; i++) if (state.players[i].line && seen(i) && disp[i]) drawBobber(i, now);
   // things that stand up, sorted back to front (x + y)
   const things = [];
   for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
@@ -2161,8 +2202,8 @@ function draw(now) {
     const kp = KEEPER_SPOT[id]();
     things.push({ k: kp.x + kp.y, draw: () => { const P = iso(kp.x, kp.y); drawSprite(lookSprites(cleanLook(SHOPKEEPS[id].look)).left.idle[Math.floor(now / 800) % 2], P.x - 24, P.y - 57); } });
   }
-  for (let i = 0; i < 2; i++) {
-    if (!seen(i)) continue;
+  for (let i = 0; i < NP; i++) {
+    if (!seen(i) || !disp[i]) continue;
     const d = disp[i];
     things.push({ k: d.x + d.y, draw: () => {
       const F = iso(d.x, d.y, onDeck(d.x, d.y) ? DECK_Z : 0);
@@ -2173,12 +2214,12 @@ function draw(now) {
     if (petPos[i]) things.push({ k: petPos[i].x + petPos[i].y - .02, draw: () => drawPet(i, now) });
   }
   things.sort((a, b) => a.k - b.k).forEach(t => t.draw());
-  for (let i = 0; i < 2; i++) if (state.players[i].line && seen(i)) drawLine(i, now);
+  for (let i = 0; i < NP; i++) if (state.players[i].line && seen(i) && disp[i]) drawLine(i, now);
   // names, bubbles, bite alerts, effects
-  for (let i = 0; i < 2; i++) {
-    if (!seen(i)) continue;
+  for (let i = 0; i < NP; i++) {
+    if (!seen(i) || !disp[i]) continue;
     const F = feet(i), p = state.players[i], bite = biting(p.line, hn);
-    label(p.name, F.x, F.y - 66, i ? "#ffb08a" : "#8fd0ff", 10);
+    label(p.name, F.x, F.y - 66, SEAT_COL[i], 10);
     if (p.line && p.line.hooked && i !== net.seat) label("🎣 Reeling!", F.x, F.y - 82, "#ffe070", 10);
     const b = bubbles[i]; if (b && now < b.until) bubble(b.text, F.x, F.y - (bite ? 120 : p.line && p.line.hooked && i !== net.seat ? 92 : 78));
     drawBiteAlert(i, now);
@@ -2372,14 +2413,15 @@ function drawBigMap(now) {
     g.fillStyle = "#ffffff"; g.beginPath(); g.arc(X, Y, 3, 0, 7); g.fill();
   }
   // players (you on top)
-  const order = net.connected ? [1 - net.seat, net.seat] : [net.seat];
+  const order = state.players.map((p, i) => i).filter(i => online(i) && i !== net.seat).concat(net.seat);
   for (const i of order) {
-    const d = disp[i] || state.players[i], X = tx(d.x), Y = ty(d.y), col = i ? "#ffb08a" : "#8fd0ff", me = i === net.seat;
+    const d = disp[i] || state.players[i], X = tx(d.x), Y = ty(d.y), col = SEAT_COL[i], me = i === net.seat;
     if (me) { const p = (now / 1100) % 1; g.strokeStyle = `rgba(143,208,255,${.8 * (1 - p)})`; g.lineWidth = 3; g.beginPath(); g.arc(X, Y, 8 + p * 16, 0, 7); g.stroke(); }
     g.fillStyle = "#08203a"; g.beginPath(); g.arc(X, Y, 8, 0, 7); g.fill();
     g.fillStyle = col; g.beginPath(); g.arc(X, Y, 6, 0, 7); g.fill();
     lab(state.players[i].name + (me ? " (you)" : ""), X, Y - 17, col, 13);
   }
+  document.getElementById("bigmap-key").textContent = state.players.map((p, i) => online(i) ? `${SEAT_ICON[i]} ${p.name}` : "").filter(Boolean).join(" · ") + " · ⚪ bubbling spot";
   document.getElementById("bigmap-time").textContent = clockText(hostNow()) + " " + periodOf(hostNow());
 }
 document.getElementById("minimap").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); openBigMap(); });
@@ -2411,8 +2453,8 @@ function drawMinimap(now) {
   mmx.beginPath(); cs.forEach((c, i) => i ? mmx.lineTo(c.x * k, c.y * k) : mmx.moveTo(c.x * k, c.y * k)); mmx.closePath(); mmx.stroke();
   for (const h of hotSpots(hostNow())) { mmx.fillStyle = Math.floor(now / 400) % 2 ? "#ffffff" : "#9ad0ff"; mmx.fillRect(h.x * k - 1, h.y * k - 1, 3, 3); }
   const dot = (i, c) => { const d = disp[i]; if (!d) return; mmx.fillStyle = "#08203a"; mmx.fillRect(d.x * k - 4, d.y * k - 4, 8, 8); mmx.fillStyle = c; mmx.fillRect(d.x * k - 3, d.y * k - 3, 6, 6); };
-  if (net.connected) dot(1 - net.seat, net.seat ? "#8fd0ff" : "#ffb08a");
-  dot(net.seat, net.seat ? "#ffb08a" : "#8fd0ff");
+  state.players.forEach((p, i) => { if (i !== net.seat && online(i)) dot(i, SEAT_COL[i]); });
+  dot(net.seat, SEAT_COL[net.seat]);
 }
 
 // ================= Local play: moving, casting, hooking, reeling =================
@@ -2722,9 +2764,11 @@ function onResult(r) {
 }
 function setConnected(on) {
   net.connected = on;
-  const el = document.getElementById("conn");
-  const other = state && state.players[1 - net.seat];
-  el.textContent = on ? `🟢 Fishing with ${other ? other.name : "your friend"}` : net.isHost ? "Waiting for your friend… share the code!" : "🔴 Disconnected";
+  const el = document.getElementById("conn"), n = state ? onlineCount() : 1;
+  const others = state ? state.players.filter((p, i) => i !== net.seat && online(i)).map(p => p.name) : [];
+  el.textContent = on ? (immersive() ? `🟢 ${n}/${MAX_PLAYERS}` : `🟢 ${n}/${MAX_PLAYERS} · fishing with ${others.join(", ")}`)
+    : net.isHost ? (immersive() ? `1/${MAX_PLAYERS} · share!` : `Waiting for friends (up to ${MAX_PLAYERS})… share the code!`) : "🔴 Disconnected";
+  el.title = others.length ? "Fishing with " + others.join(", ") : "";
   el.classList.toggle("on", on);
   renderSide();
 }
@@ -2742,17 +2786,22 @@ function renderHud() {
 }
 function renderSide() {
   if (!state) return;
+  const box = document.getElementById("players-box");
+  while (box.children.length < state.players.length) { const d = document.createElement("div"); d.className = "card player"; box.appendChild(d); }
+  while (box.children.length > state.players.length) box.lastChild.remove();
   state.players.forEach((p, i) => {
-    const el = document.getElementById("player-" + i);
-    const here = i === net.seat || net.connected;
+    const el = box.children[i];
+    el.style.setProperty("--pc", SEAT_COL[i]);
+    const here = online(i);
     const best = p.best && CATCH[p.best.id] ? `${CATCH[p.best.id].name} ${p.best.kg} kg` : "—";
-    el.innerHTML = `<h3>${i ? "🟠" : "🔵"} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}</h3>
+    el.innerHTML = `<h3>${SEAT_ICON[i]} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${i === 0 ? " 👑" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}</h3>
       <div class="stats"><div>🎣 Lv <b>${levelOf(p.xp)}</b></div><div>🐟 <b>${p.caught}</b> caught</div>
       <div style="color:${RARITY[RODS[p.rod].tier].col}">${rodIcon(p.rod)} ${RODS[p.rod].name}</div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
       <div style="grid-column:span 2">🏆 Best: ${esc(best)}</div></div>`;
   });
   const seen = FISH.filter(f => state.dex[f.id]).length;
-  document.getElementById("team-stats").innerHTML = `<div>💰 <b>${state.team.gold.toLocaleString()}</b> stash</div><div>🐟 <b>${state.team.caught}</b> caught</div>
+  const party = onlineCount() - 1;
+  document.getElementById("team-stats").innerHTML = `<div style="grid-column:span 2">🎣 <b>${onlineCount()}/${MAX_PLAYERS}</b> anglers online${party ? ` · party bonus <b>+${party * 5}%</b> at the market` : ""}</div><div>💰 <b>${state.team.gold.toLocaleString()}</b> stash</div><div>🐟 <b>${state.team.caught}</b> caught</div>
     <div>📖 <b>${seen}/${FISH.length}</b> species</div><div>⭐ <b>${state.team.legends}</b> legends</div>`;
   document.getElementById("milestones").innerHTML = TEAM_GOALS.map(g => { const ok = g.test(state); return `<div class="${ok ? "done" : ""}">${ok ? "✅" : "⬜"} ${g.label}</div>`; }).join("");
   document.getElementById("log").innerHTML = state.log.map(l => `<div class="${l.ok ? "ok" : ""}">${esc(l.text)}</div>`).join("") || `<div style="color:var(--muted)">Nothing yet — go cast a line!</div>`;
@@ -2797,7 +2846,7 @@ function renderMenu() {
     const selling = menuKind === "market";
     title.textContent = selling ? "🐟 Fish Market" : "🧊 Your cooler";
     const total = me.items.reduce((a, it) => a + priceOf(it), 0);
-    note.innerHTML = selling ? `“Fresh fish, fair prices!” — Monger Moe · Bigger fish pay more. Gold goes to the team stash.`
+    note.innerHTML = selling ? `“Fresh fish, fair prices!” — Monger Moe · Bigger fish pay more. Gold goes to the team stash.${onlineCount() > 1 ? ` <b style="color:var(--good)">Party bonus +${(onlineCount() - 1) * 5}%</b> with ${onlineCount()} anglers online.` : ""}`
                              : `${me.items.length}/${COOLERS[me.cooler].size} slots · worth about 💰${total} at the 🐟 Fish Market`;
     let h = "";
     if (!selling) {
@@ -2820,7 +2869,7 @@ function renderMenu() {
   } else if (menuKind === "settings") {
     const p = readJSON(PREFS_KEY) || {}, side = p.actSide === "left" ? "left" : "right", clear = p.joyClear ?? 10;
     title.textContent = "⚙️ Settings";
-    note.innerHTML = `Lobby <b style="color:var(--gold);letter-spacing:2px">${net.code}</b> · ${net.connected ? "🟢 friend connected" : "waiting for your friend"} · v${BUILD}`;
+    note.innerHTML = `Lobby <b style="color:var(--gold);letter-spacing:2px">${net.code}</b> · ${onlineCount()}/${MAX_PLAYERS} anglers online${onlineCount() > 1 ? ` · party bonus +${(onlineCount() - 1) * 5}%` : ""} · v${BUILD}`;
     body.innerHTML = `
       <div class="opt-title">Action buttons</div>
       <div class="setrow choices"><button class="style ${side === "left" ? "on" : ""}" data-set-side="left">◀ Bottom left</button><button class="style ${side === "right" ? "on" : ""}" data-set-side="right">Bottom right ▶</button></div>
@@ -2879,7 +2928,7 @@ function enterGame() {
   lastNight = null;
   show("game-screen");
   document.getElementById("code-show").textContent = net.code;
-  disp[0] = disp[1] = null; petPos[0] = petPos[1] = null;
+  disp.fill(null); petPos.fill(null);
   fishing.phase = "idle"; fishing.reel = null;
   document.getElementById("chat-log").innerHTML = "";
   setConnected(net.connected);
@@ -2921,8 +2970,8 @@ document.getElementById("import-file").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try {
     const s = JSON.parse(await f.text()); if (!s.players) throw 0;
-    const names = state.players.map(p => p.name), looks = state.players.map(p => p.look);
-    state = migrate(s); state.players.forEach((p, i) => { p.name = names[i]; p.look = looks[i]; p.line = null; });
+    const keep = state.players.map(p => ({ name: p.name, look: p.look, cid: p.cid, online: p.online }));
+    state = migrate(s); state.players.forEach((p, i) => { if (keep[i]) Object.assign(p, keep[i]); p.line = null; });
     save(); broadcast({ text: "Save imported.", ok: true });
   } catch { toast("That file isn't a Fish with friends save.", "bad"); }
   e.target.value = "";
@@ -2930,7 +2979,7 @@ document.getElementById("import-file").onchange = async e => {
 document.getElementById("reset").onclick = () => {
   if (!confirm("Start over? This wipes the team's progress in this lobby for both players.")) return;
   const old = state.players;
-  state = newGame(); state.players.forEach((p, i) => { p.name = old[i].name; p.look = old[i].look; p.tp = (old[i].tp || 0) + 1; });
+  state = newGame(); state.players = old.map((o, i) => Object.assign(newPlayer(i), { name: o.name, look: o.look, cid: o.cid, online: o.online, tp: (o.tp || 0) + 1 }));
   save(); broadcast({ text: "Fresh start! Everyone's back at the village.", ok: true });
 };
 

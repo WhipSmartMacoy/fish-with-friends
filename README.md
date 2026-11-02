@@ -1,6 +1,6 @@
 # 🎣 Fish with friends
 
-A co-op fishing game for two players, each on their own device. It's the sister game to [Mine with friends](https://github.com/WhipSmartMacoy/mine-with-friends) but all about fishing.
+A co-op fishing game for 1–4 players, each on their own device. It's the sister game to [Mine with friends](https://github.com/WhipSmartMacoy/mine-with-friends) but all about fishing.
 
 **Play:** https://whipsmartmacoy.github.io/fish-with-friends/ (once GitHub Pages is on — see *Hosting*)
 
@@ -25,7 +25,11 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 - **Shops:** walk up to a shop and press Space. **C** opens your cooler, **J** the journal and **Z** changes the zoom.
 
 ## Gameplay
-- **Lobbies like Mine with friends:** create a lobby, share the 5-character code, and your friend joins. Players connect browser-to-browser with [PeerJS](https://peerjs.com), so you don't need a server or an account.
+- **Lobbies for up to 4 anglers:** create a lobby and share the 5-character code. The room grows as friends join, and a fifth person is told it's full.
+  - Each angler gets their own colour: 🔵 host, 🟠, 🟢, 🟣.
+  - Leave and rejoin and you get your own seat and progress back.
+  - **The game scales with the group:** each extra angler online adds a bubbling hot spot, and fish sell for **+5% per extra angler** (+15% with 4).
+  - Players connect browser-to-browser with [PeerJS](https://peerjs.com), so you don't need a server or an account.
 - **Your angler and pet:** the same character creator as Mine with friends, plus a **dog or cat** that follows you and sits between the joystick and the Cast button on phones.
   - 🐶 **Dog:** barks when a fish bites and gives you longer to hook it.
   - 🐱 **Cat:** your catches come in a bit heavier.
