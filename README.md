@@ -8,7 +8,12 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 - **Move:** WASD / arrow keys, or the joystick on phones. The view is **isometric** like Mine with friends, and the stick moves you in screen directions (up = up the screen).
 - **Cast:** face the water and **hold Space** (or the 🎣 button). The power bar swings back and forth. Let go to cast; the dashed square shows where the bobber will land.
 - **Hook:** when a fish bites, a big **!** pops up over your angler's head (and on the bobber). Tap Space or the **HOOK!** button fast.
-- **Reel:** **hold** to raise the green bar and let go to let it sink. Keep the fish inside the bar until the yellow meter fills.
+- **Reel (a Dredge-style dial):** a needle sweeps around a ring. **Tap** (Space or the 🎯 button) while it's inside a **green catch zone**.
+  - Each good tap fills one pip. Hitting the bright centre of the zone is a *Perfect* and eases line strain.
+  - **Stay off the red snags:** tapping on one strains the line hard and costs you a pip. Tapping on empty ring strains it a little.
+  - If the strain bar fills, the fish gets away.
+  - Rarer fish move the needle faster, shrink the green zone and add more red snags. Epic and Legendary fish can swing the needle back the other way, and their snags drift around the ring.
+  - Better rods and higher fishing levels widen the green zones.
 - **Shops:** walk up to a shop and press Space. **C** opens your cooler, **J** the journal and **Z** changes the zoom.
 
 ## Gameplay
@@ -20,7 +25,7 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 - **Fishing:**
   1. Hold **Cast** to charge your throw, then let go.
   2. Tap when the bobber dips to hook the fish.
-  3. Hold to keep the reel bar on the fish until you land it.
+  3. Land it on the Dredge-style dial: tap in the green and avoid the red.
 - **27 fish** across the pond, river, lake and sea. Some only bite at night or in deep water. You can also reel in junk and treasure chests.
 - **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (9 common, 6 uncommon, 4 rare, 4 epic, 4 legendary).
   - The reel bar shows a fish's rarity as soon as you hook it.

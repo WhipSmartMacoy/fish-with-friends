@@ -101,6 +101,7 @@
            border-radius: 10px; padding: 6px 12px; font-size: .92rem; max-width: 90%; text-align: center; transition: opacity .4s; pointer-events: none; }
   .toast.ok { border-color: var(--good); } .toast.bad { border-color: var(--bad); }
   .toast.fade { opacity: 0; }
+  .toast.top { bottom: auto; top: 8px; }
   .menu { position: absolute; inset: 6px; z-index: 10; background: rgba(10, 30, 56, .96); border: 2px solid var(--line); border-radius: 12px;
           display: flex; flex-direction: column; padding: 10px; touch-action: pan-y; }
   .menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -331,7 +332,7 @@
         <div class="log" id="log"></div>
       </div>
       <div class="card keys-wrap">
-        <div class="keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> walk · hold <kbd>Space</kbd> to cast, tap to hook, hold to reel · <kbd>C</kbd> cooler · <kbd>J</kbd> journal · <kbd>Z</kbd> zoom · <kbd>Esc</kbd> close</div>
+        <div class="keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> walk · hold <kbd>Space</kbd> to cast, tap to hook, then tap in the green on the dial · <kbd>C</kbd> cooler · <kbd>J</kbd> journal · <kbd>Z</kbd> zoom · <kbd>Esc</kbd> close</div>
       </div>
       <div class="side-foot">
         <span style="color:var(--muted);font-size:.72rem">v<span class="build-tag"></span></span>
@@ -765,7 +766,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1130";
+const BUILD = "2026.11.02-1215";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -2011,27 +2012,80 @@ function drawOverlay(now) {
   }
 }
 
-// ---- The reel minigame: keep the green bar on the fish. Hold to lift the bar, let go to let it sink.
+// ---- The dial (Dredge-style): needle, green catch zones, red snags, catches-needed pips and line strain
 function drawReel(now, sw, sh) {
-  const R = fishing.reel, bh = Math.min(sh * .62, 260), bw = 34, x = sw - bw - 22, y = (sh - bh) / 2;
-  ctx.fillStyle = "rgba(8,26,52,.9)"; ctx.beginPath(); ctx.roundRect(x - 8, y - 30, bw + 34, bh + 44, 10); ctx.fill();
-  const rr = rarityOf(R.fish);
-  ctx.strokeStyle = CATCH[R.fish].rarity ? rr.col : "#f4ecd0"; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = "#3a86c4"; ctx.fillRect(x, y, bw, bh);
-  const zh = R.zone * bh, zy = y + bh - (R.zy + R.zone) * bh;
-  const inside = R.fy >= R.zy && R.fy <= R.zy + R.zone;
-  ctx.fillStyle = inside ? "rgba(140,240,120,.85)" : "rgba(140,240,120,.5)"; ctx.fillRect(x + 2, zy, bw - 4, zh);
-  ctx.strokeStyle = "#e8ffe0"; ctx.strokeRect(x + 2, zy, bw - 4, zh);
-  const fy = y + bh - R.fy * bh, art = fishArt(R.fish);
-  if (art) ctx.drawImage(art.canvas, x + bw / 2 - 18, fy - 11, 36, 22);
-  else { ctx.font = "22px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(CATCH[R.fish].shape, x + bw / 2, fy); }
-  ctx.fillStyle = "#0e2a4a"; ctx.fillRect(x + bw + 8, y, 10, bh);       // progress
-  ctx.fillStyle = R.progress > .25 ? "#ffd860" : "#ff9a8a"; ctx.fillRect(x + bw + 8, y + bh * (1 - R.progress), 10, bh * R.progress);
-  ctx.font = `bold 12px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = CATCH[R.fish].rarity ? rr.col : "#ffe070";
-  ctx.fillText(CATCH[R.fish].rarity ? rr.name + "!" : "Reel!", x + bw / 2 + 9, y - 14);
-  ctx.fillStyle = "#bfe0f4"; ctx.font = `11px "Trebuchet MS", system-ui`;
-  ctx.fillText(isTouch ? "hold" : "hold Space", x + bw / 2 + 9, y + bh + 8);
+  const R = fishing.reel, rr = rarityOf(R.fish), f = CATCH[R.fish];
+  const rad = clamp(Math.min(sw, sh) * .29, 66, 150), cx = sw / 2, cy = clamp(sh * .46, rad + 34, sh - rad - 46);
+  const ringW = clamp(rad * .2, 12, 24);
+  // backdrop
+  ctx.fillStyle = "rgba(6,20,40,.84)"; ctx.beginPath(); ctx.arc(cx, cy, rad + ringW * .9, 0, TAU); ctx.fill();
+  ctx.strokeStyle = f.rarity ? rr.col : "#f4ecd0"; ctx.lineWidth = 3; ctx.stroke();
+  const last = R.fx[R.fx.length - 1], ringFlash = last && last.ring && R.t - last.t0 < .25 ? last.ring : null;
+  // track + ticks
+  ctx.lineWidth = ringW; ctx.strokeStyle = ringFlash ? ringFlash + "55" : "#1e4a72";
+  ctx.beginPath(); ctx.arc(cx, cy, rad, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 1.5;
+  for (let k = 0; k < 24; k++) { const a = k / 24 * TAU; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (rad - ringW / 2), cy + Math.sin(a) * (rad - ringW / 2)); ctx.lineTo(cx + Math.cos(a) * (rad - ringW / 2 + 4), cy + Math.sin(a) * (rad - ringW / 2 + 4)); ctx.stroke(); }
+  // zones
+  for (const z of R.zones) {
+    const a0 = z.a - z.w / 2, a1 = z.a + z.w / 2;
+    ctx.lineCap = "butt";
+    if (z.kind === "green") {
+      ctx.strokeStyle = "#4cc860"; ctx.lineWidth = ringW; ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a1); ctx.stroke();
+      ctx.strokeStyle = "#c8ffb0"; ctx.lineWidth = ringW * .55; ctx.beginPath(); ctx.arc(cx, cy, rad, z.a - z.w * .18, z.a + z.w * .18); ctx.stroke();
+    } else {
+      const pulse = .75 + .25 * Math.sin(now / 160);
+      ctx.strokeStyle = `rgba(232,72,62,${pulse})`; ctx.lineWidth = ringW; ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a1); ctx.stroke();
+      ctx.strokeStyle = "rgba(60,8,8,.55)"; ctx.lineWidth = 2;                       // hazard stripes
+      for (let a = a0 + .06; a < a1; a += .11) { ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (rad - ringW / 2), cy + Math.sin(a) * (rad - ringW / 2)); ctx.lineTo(cx + Math.cos(a + .06) * (rad + ringW / 2), cy + Math.sin(a + .06) * (rad + ringW / 2)); ctx.stroke(); }
+      if (z.vel) { const ma = z.a + Math.sign(z.vel) * (z.w / 2 + .12); ctx.fillStyle = "#ff8a7a"; ctx.beginPath(); ctx.arc(cx + Math.cos(ma) * rad, cy + Math.sin(ma) * rad, 2.5, 0, TAU); ctx.fill(); }
+    }
+  }
+  // needle with a little trail
+  ctx.lineCap = "round";
+  for (let k = 1; k <= 6; k++) {
+    const a = R.ang - R.dir * k * .05;
+    ctx.strokeStyle = `rgba(255,216,96,${.35 - k * .05})`; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * rad * .35, cy + Math.sin(a) * rad * .35); ctx.lineTo(cx + Math.cos(a) * (rad + ringW * .7), cy + Math.sin(a) * (rad + ringW * .7)); ctx.stroke();
+  }
+  ctx.strokeStyle = "#ffd860"; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(cx + Math.cos(R.ang) * rad * .35, cy + Math.sin(R.ang) * rad * .35); ctx.lineTo(cx + Math.cos(R.ang) * (rad + ringW * .75), cy + Math.sin(R.ang) * (rad + ringW * .75)); ctx.stroke();
+  ctx.fillStyle = "#fff4c0"; ctx.beginPath(); ctx.arc(cx + Math.cos(R.ang) * (rad + ringW * .75), cy + Math.sin(R.ang) * (rad + ringW * .75), 4, 0, TAU); ctx.fill();
+  // the fish, struggling in the middle
+  const art = fishArt(R.fish), wig = Math.sin(now / (110 - R.r * 12)) * (.12 + R.strain * .2), fw = rad * .82;
+  ctx.save(); ctx.translate(cx, cy - rad * .08); ctx.rotate(wig);
+  if (art) { ctx.imageSmoothingEnabled = false; ctx.drawImage(art.canvas, -fw / 2, -fw * .31, fw, fw * .62); }
+  else { ctx.font = `${Math.round(rad * .5)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(f.shape, 0, 0); }
+  ctx.restore();
+  // catches needed
+  const pr = clamp(rad * .07, 4, 8), gap = pr * 2.8, px0 = cx - (R.need - 1) * gap / 2, py = cy + rad * .42;
+  for (let k = 0; k < R.need; k++) {
+    ctx.beginPath(); ctx.arc(px0 + k * gap, py, pr, 0, TAU);
+    ctx.fillStyle = k < R.got ? "#9af08a" : "rgba(255,255,255,.15)"; ctx.fill();
+    ctx.strokeStyle = "#08203a"; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  // rarity title
+  ctx.font = `bold ${Math.round(clamp(rad * .13, 12, 17))}px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineWidth = 4; ctx.strokeStyle = "#08203a";
+  const title = f.rarity ? `${rr.gem} ${rr.name}` : "Common";
+  ctx.strokeText(title, cx, cy - rad - ringW - 10); ctx.fillStyle = rr.col; ctx.fillText(title, cx, cy - rad - ringW - 10);
+  // line strain
+  const bw = rad * 1.5, bx = cx - bw / 2, by = cy + rad + ringW + 8;
+  ctx.fillStyle = "#0e2a4a"; ctx.fillRect(bx, by, bw, 9); ctx.strokeStyle = "#f4ecd0"; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, 9);
+  ctx.fillStyle = R.strain > .66 ? "#ff5a4a" : R.strain > .33 ? "#ffb030" : "#7ae0ff"; ctx.fillRect(bx + 1, by + 1, (bw - 2) * R.strain, 7);
+  const hint = `${isTouch ? "Tap" : "Space"} in the green · avoid the red`;
+  let hfs = 12; ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`;
+  const hw = ctx.measureText(hint).width; if (hw > sw * .86) { hfs = Math.max(9, Math.floor(hfs * sw * .86 / hw)); ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`; }
+  ctx.fillStyle = "#e4f4ff"; ctx.lineWidth = 2; ctx.strokeText(hint, cx, by + 20); ctx.fillText(hint, cx, by + 20);
+  ctx.font = `bold 9px "Trebuchet MS", system-ui`; ctx.textAlign = "right"; ctx.fillStyle = "#bfe0f4"; ctx.strokeText("strain", bx - 4, by + 5); ctx.fillText("strain", bx - 4, by + 5); ctx.textAlign = "center";
+  // feedback pops
+  for (const fx of R.fx) {
+    const t = (R.t - fx.t0) / .9;
+    ctx.globalAlpha = 1 - t; ctx.font = `bold ${Math.round(clamp(rad * .16, 13, 20))}px "Trebuchet MS", system-ui`;
+    ctx.lineWidth = 4; ctx.strokeStyle = "#08203a"; ctx.strokeText(fx.text, cx, cy - rad * .45 - t * 16);
+    ctx.fillStyle = fx.col; ctx.fillText(fx.text, cx, cy - rad * .45 - t * 16);
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ================= Minimap (top-down, like Mine with friends) =================
@@ -2062,7 +2116,7 @@ const isTouch = matchMedia("(hover: none)").matches;
 const keys = new Set();
 const joy = { id: null, x: 0, y: 0 };
 const moveVec = { x: 0, y: 0, len: 0 };
-const fishing = { phase: "idle", power: 0, pdir: 1, reel: null, holding: false, pendingUntil: 0, bitNote: 0, missSent: 0 };
+const fishing = { phase: "idle", power: 0, pdir: 1, reel: null, pendingUntil: 0, bitNote: 0, missSent: 0 };
 const shownAt = new Map();      // when each line was first seen, so the cast animation plays once
 function showAt(L) { if (!shownAt.has(L.id)) shownAt.set(L.id, performance.now()); return shownAt.get(L.id); }
 const SPEED = 4.2;              // tiles per second
@@ -2114,36 +2168,76 @@ function tickLocal(dt, now) {
     if (hn > L.biteAt + L.win + 150 && fishing.missSent !== L.id) { fishing.missSent = L.id; sendAction({ type: "reel", missed: true }); fishing.phase = "idle"; }
   }
   if (fishing.phase === "reel") tickReel(dt);
+  const tEl = document.getElementById("toast"), wantTop = fishing.phase === "reel" || fishing.phase === "charge";
+  if (tEl.classList.contains("top") !== wantTop) tEl.classList.toggle("top", wantTop);
   updateActLabel(me, hn);
   if (now - lastHud > 1000) { lastHud = now; document.getElementById("hud-time").textContent = clockText(hn); }
 }
 let lastHud = 0;
 
+// ---- The Dredge-style dial: a needle sweeps round the ring. Tap while it's in a green catch zone; stay off the red snags.
+// Rarer fish: faster needle, smaller green, more (and drifting) red, and the needle can swing back the other way.
+const TAU = Math.PI * 2;
+const angDiff = (a, b) => ((a - b) % TAU + TAU * 1.5) % TAU - Math.PI;
 function startReel(L) {
-  const me = state.players[net.seat], f = CATCH[L.fish], lvl = levelOf(me.xp), rod = RODS[me.rod];
-  fishing.reel = { id: L.id, fish: L.fish, d: f.d, zone: clamp(.21 + .035 * rod.power + .012 * lvl - f.d * .007, .14, .46),
-                   zy: .35, zv: 0, fy: .3, ft: .6, next: 0, progress: .3, t: 0 };
-  fishing.phase = "reel"; fishing.holding = false;
+  const me = state.players[net.seat], f = CATCH[L.fish], r = f.rarity || 0, lvl = levelOf(me.xp), rod = RODS[me.rod];
+  const R = {
+    id: L.id, fish: L.fish, r, d: f.d, t: 0, ang: Math.random() * TAU, dir: 1,
+    speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - rod.power * .05),          // radians per second
+    green: clamp(.8 - r * .09 - f.d * .012 + rod.power * .06 + lvl * .01, .36, .9),  // width of a catch zone (radians)
+    need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0), got: 0, strain: 0, zones: [], fx: [],
+    flipAt: r >= 3 ? 1.6 + Math.random() * 2 : Infinity, pull: r >= 3 ? .03 * (r - 2) : r === 2 ? 0 : -.05,
+  };
+  const reds = Math.min(5, r + (f.d >= 5 ? 1 : 0));
+  for (let i = 0; i < reds; i++) placeZone(R, { kind: "red", w: .32 + Math.random() * .22 + r * .02, vel: r >= 4 || (r >= 3 && i === 0) ? (Math.random() < .5 ? -1 : 1) * (.35 + Math.random() * .3) : 0 });
+  placeZone(R, { kind: "green", w: R.green });
+  fishing.reel = R; fishing.phase = "reel";
+}
+function placeZone(R, z) {      // somewhere clear of the needle and the other zones
+  for (let tries = 0; tries < 80; tries++) {
+    z.a = Math.random() * TAU;
+    if (Math.abs(angDiff(z.a, R.ang)) < .9 + z.w / 2) continue;
+    if (R.zones.some(o => Math.abs(angDiff(z.a, o.a)) < (o.w + z.w) / 2 + .14)) continue;
+    break;
+  }
+  R.zones.push(z);
+  return z;
 }
 function tickReel(dt) {
-  const R = fishing.reel, me = state.players[net.seat];
+  const R = fishing.reel;
   R.t += dt;
-  if (R.t >= R.next) { R.ft = Math.random(); R.next = R.t + (.35 + Math.random() * 1.3) * (1.25 - R.d * .075); }
-  const sp = .9 + R.d * .42;
-  R.fy += (R.ft - R.fy) * Math.min(1, dt * sp);
-  if (R.d >= 7) R.fy += Math.sin(R.t * (8 + R.d)) * dt * .25;
-  R.fy = clamp(R.fy, .03, .97);
-  R.zv = clamp(R.zv + (fishing.holding ? 2.7 : -2.3) * dt, -1.6, 1.6);
-  R.zy += R.zv * dt;
-  if (R.zy < 0) { R.zy = 0; R.zv = -R.zv * .3; }
-  if (R.zy > 1 - R.zone) { R.zy = 1 - R.zone; R.zv = 0; }
-  const inside = R.fy >= R.zy && R.fy <= R.zy + R.zone;
-  R.progress += inside ? .3 * (1 + RODS[me.rod].power * .08) * dt : -(.15 + R.d * .02) * dt;
-  if (R.progress >= 1 || R.progress <= 0) {
-    const ok = R.progress >= 1;
+  R.ang = (R.ang + R.dir * R.speed * dt + TAU) % TAU;
+  if (R.t >= R.flipAt) { R.dir *= -1; R.flipAt = R.t + 1.8 + Math.random() * 2.4; R.fx.push({ text: "↺", col: "#ffe070", t0: R.t }); sfx("flip"); }
+  for (const z of R.zones) if (z.vel) z.a = (z.a + z.vel * dt + TAU) % TAU;
+  R.strain = clamp(R.strain + R.pull * dt, 0, 1);
+  R.fx = R.fx.filter(f => R.t - f.t0 < .9);
+  if (R.got >= R.need || R.strain >= 1) {
+    const ok = R.got >= R.need;
     sendAction({ type: "land", id: R.id, ok });
-    fishing.phase = "idle"; fishing.reel = null; fishing.holding = false;
+    fishing.phase = "idle"; fishing.reel = null;
     if (ok) petHop[net.seat] = performance.now() + 600;
+  }
+}
+function dialTap() {
+  const R = fishing.reel;
+  if (!R || R.t < .3) return;                 // the tap that hooked the fish doesn't count
+  const z = R.zones.find(z => Math.abs(angDiff(R.ang, z.a)) <= z.w / 2);
+  if (z && z.kind === "green") {
+    const perfect = Math.abs(angDiff(R.ang, z.a)) <= z.w * .18;
+    R.got++; R.strain = Math.max(0, R.strain - (perfect ? .25 : .1));
+    R.zones.splice(R.zones.indexOf(z), 1);
+    if (R.r >= 2) for (const o of R.zones) if (o.kind === "red" && Math.random() < .5) { R.zones.splice(R.zones.indexOf(o), 1); placeZone(R, o); }   // the snags shift
+    if (R.got < R.need) placeZone(R, { kind: "green", w: R.green * (perfect ? 1 : .96) });
+    R.fx.push({ text: perfect ? "Perfect!" : "Nice!", col: perfect ? "#ffe070" : "#9af08a", t0: R.t, ring: "#9af08a" });
+    sfx(perfect ? "perfect" : "hit");
+  } else if (z && z.kind === "red") {
+    R.strain += .42; R.got = Math.max(0, R.got - 1);
+    R.fx.push({ text: "Snagged!", col: "#ff8a7a", t0: R.t, ring: "#ff5a4a" });
+    sfx("snag"); try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch {}
+  } else {
+    R.strain += .16;
+    R.fx.push({ text: "Miss", col: "#bfe0f4", t0: R.t });
+    sfx("miss");
   }
 }
 
@@ -2153,12 +2247,11 @@ function actDown() {
   if (menuOpen) return;
   ensureAudio();
   const me = state.players[net.seat], L = me.line, hn = hostNow();
-  if (fishing.phase === "reel") { fishing.holding = true; return; }
+  if (fishing.phase === "reel") { dialTap(); return; }
   if (fishing.phase === "wait" && L && !L.hooked) {
     if (hn >= L.biteAt - 150 && hn <= L.biteAt + L.win + 250) {
       sendAction({ type: "hook", id: L.id });
       if (!CATCH[L.fish].junk) startReel(L); else fishing.phase = "idle";
-      fishing.holding = true;
     } else { sendAction({ type: "reel" }); fishing.phase = "idle"; }
     return;
   }
@@ -2169,7 +2262,6 @@ function actDown() {
   if (!f) toast("Face the water to cast — or walk up to a shop.", "", 2200);
 }
 function actUp() {
-  fishing.holding = false;
   if (fishing.phase !== "charge" || !state) return;
   const me = state.players[net.seat], tgt = castRay(me, fishing.power);
   if (!tgt) { fishing.phase = "idle"; return; }
@@ -2182,7 +2274,7 @@ let actKey = "";
 function updateActLabel(me, hn) {
   const L = me.line;
   let label = "🎣<br>Cast", hot = false;
-  if (fishing.phase === "reel") label = "🌀<br>Hold";
+  if (fishing.phase === "reel") label = "🎯<br>Tap!";
   else if (fishing.phase === "charge") label = "🎯<br>Let go";
   else if (L && !L.hooked) {
     if (hn >= L.biteAt && hn < L.biteAt + L.win) { label = "❗<br>HOOK!"; hot = true; }
@@ -2259,6 +2351,11 @@ function sfx(kind) {
   if (kind === "cast") { tone(500, 0, .08, "triangle"); tone(300, .08, .1, "triangle"); }
   if (kind === "bite") { tone(880, 0, .07); tone(1180, .08, .09); }
   if (kind === "catch") [523, 659, 784].forEach((f, i) => tone(f, i * .08, .14));
+  if (kind === "hit") { tone(660, 0, .06, "triangle", .07); tone(990, .05, .08, "triangle", .06); }
+  if (kind === "perfect") [880, 1175, 1568].forEach((f, i) => tone(f, i * .045, .09, "triangle", .07));
+  if (kind === "snag") { tone(140, 0, .25, "sawtooth", .06); tone(110, .08, .25, "square", .04); }
+  if (kind === "miss") tone(260, 0, .08, "sine", .05);
+  if (kind === "flip") tone(520, 0, .05, "sine", .04);
   if (kind === "rare") [587, 740, 880, 1175].forEach((f, i) => tone(f, i * .07, .16, "triangle", .07));
   if (kind === "legend") [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, i * .1, .2, "triangle", .08));
   if (kind === "coin") { tone(988, 0, .06); tone(1318, .06, .12); }
@@ -2269,7 +2366,7 @@ function sfx(kind) {
 let toastTimer = 0;
 function toast(text, cls = "", ms = 3500, color = "") {
   const el = document.getElementById("toast");
-  el.textContent = text; el.className = "toast " + cls; el.style.borderColor = color; el.style.color = color && color !== RARITY[0].col ? color : "";
+  el.textContent = text; el.className = "toast " + cls + (fishing.phase === "reel" || fishing.phase === "charge" ? " top" : ""); el.style.borderColor = color; el.style.color = color && color !== RARITY[0].col ? color : "";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add("fade"), ms);
 }
 function onResult(r) {
