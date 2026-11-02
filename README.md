@@ -82,5 +82,6 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 Served with GitHub Pages: **Settings → Pages**, branch `main`, folder `/ (root)`.
 
 ## Art
+- `icons/apple-touch-icon.png`: the iOS home-screen icon (and `favicon.png`). It's pixel art of a fish being pulled out of the water by a bent rod, drawn on a 45×45 grid and scaled 4×. Regenerate it with `python3 tools/make_icon.py icons` (needs Pillow).
 - `sprites/tiles/grass-bg.png`, `brick-path.png` and `broken-path.png` come from Mine with friends.
 - `sprites/pets/dog.png` and `cat.png` come from Mine with friends. Each is a 4-frame strip and the art faces left.
