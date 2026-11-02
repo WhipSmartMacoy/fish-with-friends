@@ -22,7 +22,7 @@ A co-op fishing game for two players, each on their own device. It's the sister 
   2. Tap when the bobber dips to hook the fish.
   3. Hold to keep the reel bar on the fish until you land it.
 - **27 fish** across the pond, river, lake and sea. Some only bite at night or in deep water. You can also reel in junk and treasure chests.
-- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (8 common, 6 uncommon, 4 rare, 4 epic, 5 legendary).
+- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (9 common, 6 uncommon, 4 rare, 4 epic, 4 legendary).
   - The reel bar shows a fish's rarity as soon as you hook it.
   - Catches, the cooler and the journal are colour-coded by rarity.
   - Better rods, a Shiny Lure, Glow Bait at night and bubbling hot spots all make rarer fish more likely.
