@@ -79,6 +79,12 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Shops:**
   - 🐟 **Fish Market:** sell your catch (bigger fish are worth more) into the shared **team stash**.
   - 🎣 **Tackle Shop:** rods, bait (Worms, Shiny Lure, Glow Bait), ⏳ Hourglass Charms and bigger coolers.
+  - 📋 **Request Board:** beside Home in the village. Every day (midnight on the host's clock) it shows **3 new requests** that the whole lobby shares. Each one can be completed once, and then it's done until tomorrow.
+    - The requests are one ⭐ easy (a common fish, sometimes two), one ⭐⭐ medium (several fish from one water, or an uncommon fish) and one ⭐⭐⭐ hard (a rare fish, a big one over a set weight, or any fish of Rare rarity or better).
+    - Requests only ask for fish your party's fishing level can catch.
+    - Hand in fish from your 🧊 cooler at the board. It takes your cheapest matching fish and only uses a shiny if nothing else fits.
+    - **Rewards:** gold for the team stash, XP for whoever hands it in, and sometimes bait or an ⏳ Hourglass Charm.
+    - The board shows how many requests are left, and each completed note gets a ✓.
   - 🥪 **Sal's Sandwiches:** a little roadside shack somewhere out of town in World 1, in a different spot in every world. 🦝 **Sal** the raccoon only opens on **Fridays** (by the host's clock); the rest of the week the shutters are down.
     - His Friday Special costs **💰10,000**. Eat it from your 🧊 cooler for **1 hour** of bonuses: 🍀 rarer fish, ⚡ 30% quicker bites, and a 💪 steadier reel (a wider green zone and a slower needle).
     - The bonus is just for you, and works in World 1 and on the Sky Island. Eating another adds another hour. Sandwiches keep in your cooler, so you can buy them on Friday and eat them later. The HUD shows the minutes left, for example "🥪 42m".
@@ -143,6 +149,7 @@ Type **EEEEE** in the join box and press Join. It opens the debug lobby, or join
 - **🌍 New World 1:** generate a fresh World 1 for the debug lobby.
 - **🦝 Sal:** force Friday on or off, and **+3 🥪** sandwiches.
 - **✨ Shiny:** add a shiny of the chosen fish, or make your next catch shiny.
+- **📋 New requests:** post a fresh set of today's requests.
 - **Travel:** go to World 1, Cloud Island, any Sky Island floor or straight to the pool room. You can also clear the floor or catch its special fish.
 - **Time:** switch between day, night and the real clock.
 

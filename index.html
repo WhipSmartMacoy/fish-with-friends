@@ -885,7 +885,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-2240";
+const BUILD = "2026.11.02-2300";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1088,7 +1088,7 @@ function genWorld() {
     else if (hash2(x, y, 13) < .012) set(x, y, T.ROCK);
     else if (hash2(x, y, 14) < .05) set(x, y, T.FLOWER);
   }
-  placeSal(1);                                  // Sal's Friday sandwich shack
+  placeBoard(); placeSal(1);                                  // Sal's Friday sandwich shack
   computeDepth();
 }
 let W1_PIER = { x: 60, y: 30.5 };
@@ -1364,7 +1364,7 @@ function travelAction(seat, a, now) {
 
 // ================= Procedural World 1: each room makes its own world from a seed (saved with the room) =================
 // "classic" is the original hand-shaped map (lobbies made before worlds were generated keep it).
-const BASE_BUILDINGS = BUILDINGS.filter(b => b.id !== "ferry" && b.id !== "sal").map(b => ({ ...b }));
+const BASE_BUILDINGS = BUILDINGS.filter(b => b.id !== "ferry" && b.id !== "sal" && b.id !== "board").map(b => ({ ...b }));
 const waterAtW = (x, y) => isWater(tileAt(x, y));
 let WORLD_SEED = "classic", W1_LABELS = [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]];
 const CLASSIC = { spawns: SPAWNS.map(s => ({ ...s })), labels: W1_LABELS };
@@ -1487,7 +1487,7 @@ function genProc(seed) {
     else if (hash2(x, y, S + 13) < .012) set(x, y, T.ROCK);
     else if (hash2(x, y, S + 14) < .05) set(x, y, T.FLOWER);
   }
-  placeSal(seed);
+  placeBoard(); placeSal(seed);
   computeDepth();
   // ---- checks: every water reachable on foot, deep enough for its deep-water fish
   const reach = new Uint8Array(MW * MH), q = [idx(startX, startY)]; reach[q[0]] = 1;
@@ -1539,10 +1539,11 @@ function untilFriday(t) {                                                      /
 // The shack goes on a road somewhere out of town: the same spot every time for a given world.
 function placeSal(seed) {
   const v = BUILDINGS[1], vcx = v.x + 1, vcy = v.y + 1, ok = [T.GRASS, T.FLOWER, T.TREE, T.ROCK];
-  const find = minD => {
+  const front = (x, y, spur) => tileAt(x, y) === T.PATH || (spur && [T.GRASS, T.FLOWER].includes(tileAt(x, y)) && tileAt(x, y + 1) === T.PATH);
+  const find = (minD, spur) => {
     const c = [];
-    for (let y = 2; y < MH - 4; y++) for (let x = 2; x < MW - 3; x++) {
-      if (tileAt(x, y + 2) !== T.PATH || tileAt(x + 1, y + 2) !== T.PATH) continue;
+    for (let y = 2; y < MH - 5; y++) for (let x = 2; x < MW - 3; x++) {
+      if (!front(x, y + 2, spur) || !front(x + 1, y + 2, spur)) continue;
       if (Math.hypot(x - vcx, y - vcy) < minD) continue;
       let good = true;
       for (let yy = y - 1; yy < y + 2 && good; yy++) for (let xx = x; xx < x + 2; xx++)
@@ -1553,9 +1554,20 @@ function placeSal(seed) {
     }
     return c;
   };
-  const c = find(14).length ? find(14) : find(6);
+  let c = find(14); if (!c.length) c = find(14, true); if (!c.length) c = find(6, true);    // spur: a short path out to the road
+  if (!c.length) {                                       // only north–south roads out here: set the shack just off one, with a little walk
+    const clearAt = (x, y) => { for (let yy = y - 1; yy < y + 3; yy++) for (let xx = x - 1; xx < x + 3; xx++) { const t = tileAt(xx, yy);
+      if (yy < y + 2 && xx >= x && xx < x + 2 ? !ok.includes(t) || buildAt[idx(xx, yy)] >= 0 : waterAt(xx, yy) || [T.DOCK, T.BRIDGE, T.BUILD].includes(t)) return false; } return true; };
+    for (let ry = 4; ry < MH - 4; ry++) for (let rx = 3; rx < MW - 4; rx++) {
+      if (tileAt(rx, ry) !== T.PATH || Math.hypot(rx - vcx, ry - vcy) < 12) continue;
+      for (const side of [1, -1]) { const x = side > 0 ? rx + 2 : rx - 3, y = ry - 2, link = side > 0 ? [rx + 1, rx + 2, rx + 3] : [rx - 1, rx - 2, rx - 3];
+        if (link.every(xx => [T.GRASS, T.FLOWER, T.PATH].includes(tileAt(xx, ry))) && clearAt(x, y)) c.push([x, y, link, ry]); }
+    }
+  }
   if (!c.length) return;
-  const [x, y] = c[Math.floor(hash2(seed % 9973, 7, 31) * c.length)];
+  const [x, y, link, ry] = c[Math.floor(hash2(seed % 9973, 7, 31) * c.length)];
+  if (link) link.forEach(xx => { tiles[idx(xx, ry)] = T.PATH; });
+  for (const xx of [x, x + 1]) if (tileAt(xx, y + 2) !== T.PATH) tiles[idx(xx, y + 2)] = T.PATH;
   const b = { id: "sal", name: "Sal's Sandwiches", x, y, w: 2, h: 2, sign: "🥪", act: "🥪<br>Sal", kind: "shack", roof: "#4f9a94" };
   const bi = BUILDINGS.push(b) - 1;
   for (let yy = y; yy < y + 2; yy++) for (let xx = x; xx < x + 2; xx++) { tiles[idx(xx, yy)] = T.BUILD; buildAt[idx(xx, yy)] = bi; }
@@ -1649,6 +1661,118 @@ function drawShackIso(b, now) {
   signBoard(b, a(b.x + b.w / 2 + .2, j0 + .2, R0 + .45));
 }
 
+// ================= 📋 Request Board: three requests a day for the whole lobby =================
+// The board stands beside Home in World 1. Each day (midnight on the host's clock) the host posts 3 new requests:
+// one easy, one medium and one hard. Hand in fish from your cooler to complete them — each one can be done once.
+const dayKey = t => new Date(t - tzOffset() * 60000).toISOString().slice(0, 10);
+function untilMidnight(t) {
+  const local = t - tzOffset() * 60000, ms = DAY_MS - (((local % DAY_MS) + DAY_MS) % DAY_MS), h = Math.floor(ms / 3600000), m = Math.ceil((ms % 3600000) / 60000);
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+const REQUESTERS = ["👵 Granny Pearl", "👨‍🍳 Chef Marco", "🧒 Little Tim", "👮 Officer Dot", "🧑‍🔬 Dr. Gill", "👩‍🌾 Farmer June", "🧔 Old Barnaby", "👸 Mayor Lou", "🐻 Bruno the Bear", "🧙 Wizard Wren", "🦦 Otto the Otter", "👩‍🎨 Painter Pia"];
+const REQ_LINES = {
+  fish: ["is making a pie and needs", "wants to frame", "promised a friend", "has a craving for", "needs a model for a painting of"],
+  water: ["is stocking an aquarium with", "is throwing a fish fry and needs", "is counting the fish in town and wants"],
+  rar: ["collects fancy fish and wants", "bet a friend you'd bring", "wants something special:"],
+};
+function placeBoard() {
+  const home = BUILDINGS.find(b => b.id === "home"); if (!home) return;
+  const x = home.x - 3, y = home.y + home.h - 1;
+  if (!inMap(x, y) || !inMap(x + 1, y)) return;
+  const b = { id: "board", name: "Request Board", x, y, w: 2, h: 1, sign: "📋", act: "📋<br>Requests", kind: "board", anyside: true };
+  const bi = BUILDINGS.push(b) - 1;
+  for (let xx = x; xx < x + 2; xx++) { tiles[idx(xx, y)] = T.BUILD; buildAt[idx(xx, y)] = bi; }
+  for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 2; xx++) if ([T.TREE, T.ROCK].includes(tileAt(xx, yy))) tiles[idx(xx, yy)] = T.GRASS;
+}
+const reqMatch = (it, q) => { const f = CATCH[it.id]; if (!f || f.junk) return false;
+  return q.kind === "fish" ? it.id === q.id && (!q.kg || it.kg >= q.kg) : q.kind === "water" ? f.water.includes(q.water) : f.rarity >= q.rar; };
+// The cheapest catches that fill the request (shinies only if nothing else will do)
+function reqPick(items, q) {
+  const m = items.map((it, i) => ({ it, i })).filter(o => reqMatch(o.it, q)).sort((a, b) => (a.it.sh ? 1 : 0) - (b.it.sh ? 1 : 0) || priceOf(a.it) - priceOf(b.it));
+  return m.length >= q.n ? m.slice(0, q.n).map(o => o.i) : null;
+}
+const reqHave = (items, q) => items.filter(it => reqMatch(it, q)).length;
+function reqText(q) {
+  const f = q.kind === "fish" && CATCH[q.id];
+  if (q.kind === "fish") return `${q.n > 1 ? q.n + "× " : "a "}${f ? f.name : "?"}${q.kg ? ` of at least ${q.kg} kg` : ""}`;
+  if (q.kind === "water") return `${q.n} fish from the ${WATER_LABEL[q.water]}`;
+  const rr = RARITY[q.rar]; return `${q.n > 1 ? q.n + " fish" : "a fish"} of ${rr.gem ? rr.gem + " " : ""}${rr.name} rarity or better`;
+}
+function rollBoard(t) {
+  const day = dayKey(t), rnd = mulberry((hash2(+day.replace(/-/g, "") % 99991, 3 + (state.boardSalt || 0), (Number(state.worldSeed) || 7) % 9973) * 1e9) | 0);
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const lvl = Math.max(...state.players.map(p => levelOf(p.xp)));
+  const pool = FISH.filter(f => !f.water.includes("sky") && f.lvl <= lvl && !f.legend);
+  const by = r => pool.filter(f => f.rarity === r);
+  const who = [...REQUESTERS].sort(() => rnd() - .5);
+  const reqs = [];
+  // easy: a common fish, sometimes two
+  { const f = pick(by(0).length ? by(0) : pool), n = rnd() < .4 ? 2 : 1;
+    reqs.push({ kind: "fish", id: f.id, n, gold: Math.round(f.price * 4 * n + 40), xp: 20 }); }
+  // medium: a handful from one water, or an uncommon fish
+  if (rnd() < .5 || !by(1).length) { const w = pick(["pond", "river", "lake", "sea"].filter(w => pool.some(f => f.water.includes(w)))), n = 3 + Math.floor(rnd() * 3);
+    reqs.push({ kind: "water", water: w, n, gold: 60 * n + 80, xp: 45 }); }
+  else { const f = pick(by(1)); reqs.push({ kind: "fish", id: f.id, n: 1, gold: Math.round(f.price * 6 + 120), xp: 45 }); }
+  // hard: a rare-or-better fish, a specific rare fish, or a big one
+  const hard = rnd();
+  if (hard < .35 && (by(2).length || by(3).length)) { const f = pick([...by(2), ...by(3)]); reqs.push({ kind: "fish", id: f.id, n: 1, gold: Math.round(f.price * 8 + 300), xp: 90 }); }
+  else if (hard < .7) { const f = pick(pool.filter(f => f.rarity <= 1)), kg = +(f.kg[0] + (f.kg[1] - f.kg[0]) * .7).toFixed(2);
+    reqs.push({ kind: "fish", id: f.id, n: 1, kg, gold: Math.round(f.price * 10 + 250), xp: 90 }); }
+  else if (!by(2).length && !by(3).length) { const f = pick(pool), kg = +(f.kg[0] + (f.kg[1] - f.kg[0]) * .7).toFixed(2);   // nothing rare is in reach yet: a big one instead
+    reqs.push({ kind: "fish", id: f.id, n: 1, kg, gold: Math.round(f.price * 10 + 250), xp: 90 }); }
+  else reqs.push({ kind: "rar", rar: 2, n: lvl >= 8 ? 2 : 1, gold: lvl >= 8 ? 900 : 450, xp: 90 });
+  reqs.forEach((q, i) => {
+    q.who = who[i]; q.line = pick(REQ_LINES[q.kind]); q.done = null;
+    if (rnd() < .3) q.item = pick(["worms", "lure", "glow", "hourglass"]);                  // sometimes a little extra
+  });
+  state.board = { day, reqs };
+}
+function ensureBoard(t = Date.now()) {          // host only: post today's requests if the day has turned over
+  if (!state || (state.board && state.board.day === dayKey(t))) return false;
+  rollBoard(t); return true;
+}
+function requestAction(seat, a, now) {
+  const p = state.players[seat], q = state.board && state.board.reqs[a.i | 0];
+  if (!q) return null;
+  if (state.board.day !== dayKey(now)) { ensureBoard(now); return { text: "📋 The board just changed — today's requests are up.", ok: false, seat, private: true }; }
+  if (q.done) return { text: `That request was already done by ${q.done}.`, ok: false, seat, private: true };
+  const take = reqPick(p.items, q);
+  if (!take) return { text: `You need ${reqText(q)} in your cooler.`, ok: false, seat, private: true };
+  take.sort((x, y) => y - x).forEach(i => p.items.splice(i, 1));
+  q.done = p.name;
+  state.team.gold += q.gold; state.team.earned += q.gold; p.xp += q.xp;
+  let extra = "";
+  if (q.item === "hourglass") { p.hourglass = (p.hourglass || 0) + 1; extra = " and an ⏳ Hourglass Charm"; }
+  else if (q.item && BAITS[q.item]) { p.bait[q.item] = (p.bait[q.item] || 0) + 5; extra = ` and 5 ${BAITS[q.item].icon} ${BAITS[q.item].name}`; }
+  state.team.requests = (state.team.requests || 0) + 1;
+  const left = state.board.reqs.filter(r => !r.done).length;
+  const text = `📋 ${p.name} completed ${q.who.split(" ").slice(1).join(" ")}'s request! +💰${q.gold.toLocaleString()} +${q.xp} xp${extra}.${left ? ` ${left} left today.` : " 🎉 All of today's requests are done!"}`;
+  addLog(text, true);
+  return { text, ok: true, seat, sfx: left ? "coin" : "legend" };
+}
+function drawBoardIso(b, now) {
+  const a = iso, x0 = b.x + .15, x1 = b.x + b.w - .15, y = b.y + .5, open = state && state.board ? state.board.reqs.filter(r => !r.done).length : 0;
+  polyFill(ctx, [a(x0, y + .3), a(x1 + .1, y + .3), a(x1 + .1, y - .1), a(x0, y - .1)], "rgba(0,0,0,.18)");
+  ctx.strokeStyle = "#4a2c18"; ctx.lineWidth = 4;
+  for (const px of [x0 + .1, x1 - .1]) { const p = a(px, y, 0), q = a(px, y, 1.9); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+  polyFill(ctx, [a(x0, y, .75), a(x1, y, .75), a(x1, y, 1.95), a(x0, y, 1.95)], "#c08a4a", "#4a2c18", 2);       // the board
+  polyFill(ctx, [a(x0 + .08, y, .83), a(x1 - .08, y, .83), a(x1 - .08, y, 1.87), a(x0 + .08, y, 1.87)], "#d8b080");   // cork
+  polyFill(ctx, [a(x0 - .1, y, 1.95), a(x1 + .1, y, 1.95), a(x1 + .05, y, 2.15), a(x0 - .05, y, 2.15)], "#7a4a24", "#4a2c18");   // little roof
+  const reqs = state && state.board ? state.board.reqs : [];
+  for (let k = 0; k < 3; k++) {                                                                   // the three notes
+    const u = x0 + .22 + k * (x1 - x0 - .44) / 2, q = reqs[k], c = a(u, y, 1.32);
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(-.42 + (k - 1) * .08);
+    ctx.fillStyle = q && q.done ? "#cfe8c0" : "#fffbe8"; ctx.fillRect(-9, -11, 18, 22);
+    ctx.strokeStyle = "#a89870"; ctx.lineWidth = .8; ctx.strokeRect(-9, -11, 18, 22);
+    ctx.fillStyle = "#8a8070"; for (let l = 0; l < 4; l++) ctx.fillRect(-6, -5 + l * 4, l === 3 ? 7 : 12, 1.2);
+    ctx.fillStyle = ["#e04a3a", "#3a8ae0", "#e0b03a"][k]; ctx.beginPath(); ctx.arc(0, -9, 2.2, 0, 7); ctx.fill();
+    if (q && q.done) { ctx.fillStyle = "#2a9a3a"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("✓", 1, 3); }
+    ctx.restore();
+  }
+  const top = a(b.x + b.w / 2, y, 2.4);
+  if (open) { const bob = Math.sin(now / 300) * 2; label(`📋 ${open}`, top.x, top.y - 6 + bob, "#ffe08a", 11); }
+}
+
 // ================= Debug lobby (code EEEEE): playtest tools =================
 const DEBUG_CODE = "EEEEE";
 const isDebug = () => net.code === DEBUG_CODE;
@@ -1666,6 +1790,7 @@ function debugAction(seat, a) {
       if (!f.junk) { const d = state.dex[f.id] || (state.dex[f.id] = { n: 0, best: 0, by: p.name }); d.n++; d.best = Math.max(d.best, kg); if (sh) d.sh = (d.sh || 0) + 1; }
       return say(`+${sh ? shinyName(f) : f.name} (${kg} kg)`);
     }
+    case "board": state.boardSalt = (state.boardSalt || 0) + 1; rollBoard(Date.now()); return say("📋 New requests posted");
     case "nextshiny": p.nextShiny = true; return say("✨ Your next fish will be Oooooo Shiny");
     case "dex": {
       const list = a.set === "all" ? FISH : a.set === "w1" ? W1_REQUIRED : FISH.filter(f => f.water.includes(a.set));
@@ -2109,6 +2234,7 @@ function applyActionCore(seat, a) {
     addLog(text, true);
     return { text, ok: true, seat, sfx: "rare" };
   }
+  if (a.type === "request") return requestAction(seat, a, now);
   if (a.type === "eat") {
     if (!(p.sandwich > 0)) return null;
     p.sandwich--; p.fed = Math.max(now, p.fed || 0) + FED_MS;                  // another sandwich adds another hour
@@ -2178,6 +2304,7 @@ setInterval(() => {
     if (!L.hooked && now > L.biteAt + L.win + 4000) { p.line = null; dirty = true; }
     if (L.hooked && now > L.hookedAt + 90000) { p.line = null; dirty = true; }
   });
+  if (ensureBoard(now)) dirty = true;                                   // 📋 a new day: new requests
   if (dirty) { save(); broadcast({ quiet: true }); }
 }, 500);
 
@@ -2656,6 +2783,7 @@ function drawBuildingIso(b, now) {
   if (b.kind === "boat") return drawBoatIso(b, now);
   if (b.kind === "chest") return drawChestIso(b, now);
   if (b.kind === "shack") return drawShackIso(b, now);
+  if (b.kind === "board") return drawBoardIso(b, now);
   return (b.stall ? drawStallIso : drawHouseIso)(b, now);
 }
 // ---- Docks, the pier and bridges: wooden decks on pilings, drawn live above the water (sorted back to front)
@@ -3677,7 +3805,7 @@ function renderDebug(title, note, body) {
     <div class="opt-title">Gold</div>
     <div class="setrow">${B("+1,000", { what: "gold", n: 1000 })}${B("+10,000", { what: "gold", n: 10000 })}${B("+100,000", { what: "gold", n: 100000 })}<input id="dbg-gold" class="field" type="number" value="500" style="width:100px;padding:6px">${B("Give", { what: "gold" })}</div>
     <div class="opt-title">Fish</div>
-    <div class="setrow"><select id="dbg-fish" class="field" style="flex:1;min-width:180px;padding:6px">${opts(FISH)}${opts(JUNK)}</select>${B("Add to cooler", { what: "fish" })}${B("Add trophy", { what: "fish", big: true })}${B("✨ Add shiny", { what: "fish", shiny: true })}${B("✨ Next catch shiny", { what: "nextshiny" })}</div>
+    <div class="setrow"><select id="dbg-fish" class="field" style="flex:1;min-width:180px;padding:6px">${opts(FISH)}${opts(JUNK)}</select>${B("Add to cooler", { what: "fish" })}${B("Add trophy", { what: "fish", big: true })}${B("✨ Add shiny", { what: "fish", shiny: true })}${B("✨ Next catch shiny", { what: "nextshiny" })}${B("📋 New requests", { what: "board" })}</div>
     <div class="setrow">${B("📖 All World 1 fish (unlocks ferry)", { what: "dex", set: "w1" })}${B("📖 Every fish", { what: "dex", set: "all" })}${B("📖 Sky fish", { what: "dex", set: "sky" })}${B("🧹 Clear journal", { what: "cleardex" })}${B("🗑️ Empty cooler", { what: "empty" })}</div>
     <div class="opt-title">Rods & level</div>
     <div class="setrow">${RODS.map((r, i) => B(`${rodIcon(i)} ${r.name.replace(" Rod", "")}`, { what: "rod", i }, me.rod === i ? "btn-gold" : "")).join("")}</div>
@@ -3758,6 +3886,22 @@ function renderMenuInner() {
     h += `<div class="opt-title" style="margin-top:10px">Cooler</div>`;
     const nx = COOLERS[me.cooler + 1];
     h += row("🧊", nx ? `Bigger cooler (${nx.size} slots)` : "Biggest cooler", `Yours holds ${COOLERS[me.cooler].size} catches.`, nx ? `<button class="btn-gold" data-buy="cooler" ${gold < nx.price ? "disabled" : ""}>💰${nx.price.toLocaleString()}</button>` : "");
+    body.innerHTML = h;
+  } else if (menuKind === "board") {
+    const hn = hostNow(), bd = state.board;
+    title.textContent = "📋 Request Board";
+    const doneN = bd ? bd.reqs.filter(r => r.done).length : 0;
+    note.innerHTML = `Three new requests every day — the whole lobby shares them. Hand in fish from your 🧊 cooler; gold goes to the team stash and the XP to you.<br><b>${doneN}/3 done today</b> · new requests in ${untilMidnight(hn)} (host's clock).`;
+    let h = "";
+    if (!bd || bd.day !== dayKey(hn)) h = `<div class="mrow dim"><div class="ic">📌</div><div class="txt"><b>Pinning up today's requests…</b><small>Give it a second.</small></div></div>`;
+    else bd.reqs.forEach((q, i) => {
+      const have = reqHave(me.items, q), ok = !q.done && have >= q.n, diff = ["⭐ Easy", "⭐⭐ Medium", "⭐⭐⭐ Hard"][i];
+      const ic = q.kind === "fish" ? fishIcon(q.id) : q.kind === "water" ? ({ pond: "🪷", river: "🏞️", lake: "⛵", sea: "🌊" })[q.water] : RARITY[q.rar].gem || "💎";
+      const reward = `💰${q.gold.toLocaleString()} · +${q.xp} xp${q.item ? ` · ${q.item === "hourglass" ? "⏳ Hourglass" : `5 ${BAITS[q.item].icon} ${BAITS[q.item].name}`}` : ""}`;
+      h += row(ic, `${q.who} <span class="rtag" style="--rc:${["#9ad08a", "#8ac0ff", "#ffb060"][i]}">${diff}</span>`,
+        `${q.who.split(" ").slice(1).join(" ")} ${q.line} <b>${reqText(q)}</b>.<br>Reward: ${reward}${q.done ? "" : ` · <span style="color:${ok ? "var(--good)" : "var(--muted)"}">you have ${Math.min(have, q.n)}/${q.n}</span>`}`,
+        q.done ? `<button disabled>✅ ${esc(q.done)}</button>` : `<button class="btn-gold" data-req="${i}" ${ok ? "" : "disabled"}>Hand in</button>`, q.done ? "" : ["#9ad08a", "#8ac0ff", "#ffb060"][i]);
+    });
     body.innerHTML = h;
   } else if (menuKind === "sal") {
     const hn = hostNow(), open = salOpen(hn), fl = fedLeft(me, hn);
@@ -3846,6 +3990,7 @@ document.getElementById("menu-body").addEventListener("click", e => {
   else if (b.dataset.bait) sendAction({ type: "bait", id: b.dataset.bait });
   else if (b.dataset.warp) sendAction({ type: "warp", mode: b.dataset.warp });
   else if (b.dataset.eat) sendAction({ type: "eat" });
+  else if (b.dataset.req) sendAction({ type: "request", i: +b.dataset.req });
   else if (b.dataset.tab) { journalTab = b.dataset.tab; renderMenu(); }
   else if (b.dataset.setSide) { writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), actSide: b.dataset.setSide }); applyControlPrefs(); renderMenu(); }
   else if (b.dataset.setZoom) { zoom = +b.dataset.setZoom; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), zoom }); document.getElementById("zoom-btn").textContent = ZOOMS[zoom].icon; renderMenu(); }
