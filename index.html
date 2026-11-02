@@ -877,7 +877,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1800";
+const BUILD = "2026.11.02-1830";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1378,7 +1378,7 @@ function debugAction(seat, a) {
     case "cleardex": state.dex = {}; state.unlocked = {}; return say("Journal cleared and Cloud Island locked");
     case "unlock": state.unlocked = { ...(state.unlocked || {}), cloud: true }; return say("Cloud Island unlocked");
     case "rod": if (!RODS[a.i | 0]) return null; p.rod = a.i | 0; return say(`Rod: ${RODS[p.rod].name}`);
-    case "level": p.xp = XP_AT[clamp((a.n | 0) - 1, 0, 9)]; return say(`Fishing level ${levelOf(p.xp)}`);
+    case "level": p.xp = XP_AT[clamp((a.n | 0) - 1, 0, MAX_LVL - 1)]; return say(`Fishing level ${levelOf(p.xp)}`);
     case "bait": p.bait[a.id] = (p.bait[a.id] || 0) + 10; return say(`+10 ${BAITS[a.id].name}`);
     case "hourglass": p.hourglass = (p.hourglass || 0) + 3; return say("+3 Hourglass Charms");
     case "cooler": p.cooler = COOLERS.length - 1; return say("Biggest cooler");
@@ -1553,7 +1553,18 @@ const RODS = [
   { name: "Gold Rod",    tier: 3, reach: 5, power: 3,   price: 3600,  lvl: 6, col: "#ffd23f", dark: "#b88a10", grip: "#7a2a2a" },
   { name: "Diamond Rod", tier: 3, reach: 6, power: 3.6, price: 7000,  lvl: 8, col: "#8ff0ff", dark: "#3aa8c8", grip: "#2a3a5a" },
   { name: "Mythril Rod", tier: 4, reach: 7, power: 4.2, price: 13000, lvl: 9, col: "#b98bff", dark: "#6a3ac8", grip: "#1a1430" },
+  // Sky rods (tiers 9–16): sold only at the Sky Outpost on Cloud Island
+  { name: "Cloud Rod",     tier: 1, sky: true, reach: 7, power: 4.5, price: 20000,  lvl: 10, col: "#f4f8ff", dark: "#a8c0e0", grip: "#5a7aa8" },
+  { name: "Zephyr Rod",    tier: 1, sky: true, reach: 7, power: 4.8, price: 32000,  lvl: 11, col: "#b8f0e0", dark: "#58b8a0", grip: "#2a5a50" },
+  { name: "Storm Rod",     tier: 2, sky: true, reach: 8, power: 5.1, price: 50000,  lvl: 12, col: "#8a9ae8", dark: "#3a4aa8", grip: "#ffe040" },
+  { name: "Rainbow Rod",   tier: 2, sky: true, reach: 8, power: 5.4, price: 75000,  lvl: 13, col: "#ff9ac8", dark: "#8ad0ff", grip: "#ffe070" },
+  { name: "Starlight Rod", tier: 3, sky: true, reach: 8, power: 5.7, price: 110000, lvl: 14, col: "#fff4a0", dark: "#c8a830", grip: "#2a2a5a" },
+  { name: "Aurora Rod",    tier: 3, sky: true, reach: 9, power: 6.0, price: 160000, lvl: 15, col: "#7affc8", dark: "#b08aff", grip: "#1a2a3a" },
+  { name: "Comet Rod",     tier: 4, sky: true, reach: 9, power: 6.3, price: 230000, lvl: 16, col: "#ff8a5a", dark: "#5a6ad8", grip: "#1a1430" },
+  { name: "Cosmic Rod",    tier: 4, sky: true, reach: 10, power: 6.6, price: 330000, lvl: 18, col: "#d8a0ff", dark: "#3a1a6a", grip: "#000010" },
 ];
+const rodTier = p => (p.rod | 0) + 1;                       // rods are tiers 1–16
+const effPow = r => Math.min(r.power, 5);                    // formulas that would break past this use the capped value
 const rodLuck = r => Math.round(r.power * 15), rodControl = r => Math.round(r.power * 13);
 const rodArtCache = {};
 function rodArt(i) {      // a little pixel rod for the shop, the HUD and the stats panel
@@ -1572,8 +1583,9 @@ const BAITS = {
   glow:  { name: "Glow Bait",   icon: "💡", pack: 10, price: 100, desc: "Great at night and in deep water: rarer fish, quicker bites." },
 };
 const COOLERS = [{ size: 10, price: 0 }, { size: 16, price: 300 }, { size: 24, price: 900 }, { size: 32, price: 2400 }, { size: 40, price: 6000 }];
-const XP_AT = [0, 30, 80, 160, 280, 450, 700, 1050, 1500, 2100];   // XP needed for levels 1..10
-const levelOf = xp => { let l = 1; while (l < 10 && xp >= XP_AT[l]) l++; return l; };
+const XP_AT = [0, 30, 80, 160, 280, 450, 700, 1050, 1500, 2100, 2900, 3900, 5100, 6500, 8200, 10200, 12500, 15200, 18300, 22000];   // XP for levels 1..20
+const MAX_LVL = XP_AT.length;
+const levelOf = xp => { let l = 1; while (l < MAX_LVL && xp >= XP_AT[l]) l++; return l; };
 const PET_PERKS = { None: "", Dog: "🐶 Barks when a fish bites — you get a little longer to hook it.", Cat: "🐱 Fish lover — your catches come in a bit heavier." };
 
 function sizeLabel(f, kg) {
@@ -1661,13 +1673,26 @@ function rollCatch(p, tx, ty, now) {
   if (LOOKS.pet[look.pet] === "Cat") t = Math.min(1, t * 1.08 + .04);
   const kg = +(pick.kg[0] + (pick.kg[1] - pick.kg[0]) * t).toFixed(2);
   let wait = 2200 + Math.random() * 5500;
-  wait *= 1 - rod.power * .06;
+  wait *= 1 - effPow(rod) * .06;
   if (bait === "worms") wait *= .6; else if (bait === "glow" && (night || deep)) wait *= .75;
   if (hot) wait *= .65;
   const dog = LOOKS.pet[look.pet] === "Dog";
   const win = Math.max(650, 1300 - (pick.d || 1) * 45) + (dog ? 450 : 0);
   return { fish: pick.id, kg, biteAt: now + Math.round(wait), win, bait };
 }
+
+// ---- Fishing holes: every 3×3 patch of water has a tier. In World 1 most holes match your rod's tier,
+// ~10% are one higher and ~3% two higher. On the Sky Island holes start at tier 9 and climb with the floor.
+const HOLE = 3;
+function holeTier(p, tx, ty) {
+  const bump = h => h < .03 ? 2 : h < .13 ? 1 : 0, sk = state && state.sky;
+  if (WATER_KEYS[tileAt(tx, ty)] === "sky") {
+    const floor = sk ? sk.floor : 1;
+    return Math.min(20, 9 + Math.floor((floor - 1) / 2) + bump(hash2(Math.floor(tx / HOLE), Math.floor(ty / HOLE), (sk ? sk.seed : 1) + floor * 17)));
+  }
+  return Math.min(8, rodTier(p)) + bump(hash2(Math.floor(tx / HOLE), Math.floor(ty / HOLE), 4242 + rodTier(p)));
+}
+const tierMult = t => 1 + (t - 1) * .15;                   // price and XP climb with the hole's tier
 
 // ---- Host: apply an action from either player, return a result to broadcast (or null)
 let lineSeq = 1;
@@ -1685,9 +1710,11 @@ function applyActionCore(seat, a) {
     if (DIRS[a.dir]) p.dir = a.dir;
     const tx = a.tx | 0, ty = a.ty | 0;
     if (!waterAt(tx, ty) || Math.hypot(tx + .5 - p.x, ty + .5 - p.y) > RODS[p.rod].reach + 1.2) return { text: "Too far to cast there.", ok: false, seat, private: true };
-    const r = rollCatch(p, tx, ty, now);
+    const r = rollCatch(p, tx, ty, now), tier = holeTier(p, tx, ty), gap = tier - rodTier(p);
     if (r.bait) p.bait[r.bait]--;
-    p.line = { id: lineSeq++, x: tx, y: ty, ox: p.x, oy: p.y, ...r, hooked: false };
+    if (gap > 0) r.win = Math.round(r.win * Math.max(.45, 1 - .2 * gap));      // fish above your rod are quick to spit the hook
+    p.line = { id: lineSeq++, x: tx, y: ty, ox: p.x, oy: p.y, ...r, tier, gap, hooked: false };
+    if (gap > 0) return { text: `⚠️ Tier ${tier} fishing hole — your rod is tier ${rodTier(p)}. This one will be very tough!`, ok: false, seat, private: true, neutral: true };
     return { quiet: true, seat };
   }
   if (a.type === "hook") {
@@ -1726,6 +1753,7 @@ function applyActionCore(seat, a) {
     if (a.what === "rod") {
       const i = a.i | 0, r = RODS[i];
       if (!r || i !== p.rod + 1) return null;
+      if (r.sky && p.map !== "cloud") return { text: "☁️ Sky rods are sold at the Sky Outpost on Cloud Island.", ok: false, seat, private: true };
       if (levelOf(p.xp) < r.lvl) return { text: `The ${r.name} needs fishing level ${r.lvl}.`, ok: false, seat, private: true };
       if (state.team.gold < r.price) return { text: "Not enough gold in the team stash.", ok: false, seat, private: true };
       state.team.gold -= r.price; p.rod = i;
@@ -1781,9 +1809,10 @@ function landCatch(seat, ok) {
   }
   const skyNote = (!f.junk && L.floor) ? skyProgress(f) : "";
   if (p.items.length >= COOLERS[p.cooler].size) return { text: "Your cooler is full! The catch flopped back in." + (skyNote ? " " + skyNote : " Sell at the 🐟 Fish Market."), ok: !!skyNote, seat, fx: { x: L.x, y: L.y, text: "🧊 full", color: "#ff9a8a" }, sfx: skyNote.includes("cleared") ? "legend" : undefined };
-  p.items.push(L.floor ? { id: f.id, kg: L.kg, m: +(1 + (L.floor - 1) * .08).toFixed(2) } : { id: f.id, kg: L.kg });
+  const tm = tierMult(L.tier || 1);
+  p.items.push({ id: f.id, kg: L.kg, m: +tm.toFixed(2), t: L.tier || 1 });
   const before = levelOf(p.xp);
-  const xp = f.junk ? 1 : 2 + f.d * 3 + (f.legend ? 60 : 0);
+  const xp = f.junk ? 1 : Math.round((2 + f.d * 3 + (f.legend ? 60 : 0)) * tm);
   p.xp += xp;
   const up = levelOf(p.xp) > before ? levelOf(p.xp) : 0;
   if (!f.junk) {
@@ -1794,7 +1823,7 @@ function landCatch(seat, ok) {
     if (f.legend) state.team.legends++;
     if (!p.best || L.kg * f.price > p.best.score) p.best = { id: f.id, kg: L.kg, score: L.kg * f.price };
     const sz = sizeLabel(f, L.kg), rr = RARITY[f.rarity];
-    let text = `${p.name} caught ${f.legend ? "the LEGENDARY " : f.rarity ? `${f.rarity === 1 ? "an" : "a"} ${rr.gem} ${rr.name.toUpperCase()} ` : "a "}${sz ? sz.toLowerCase() + " " : ""}${f.name} (${L.kg} kg)!`;
+    let text = `${p.name} caught ${f.legend ? "the LEGENDARY " : f.rarity ? `${f.rarity === 1 ? "an" : "a"} ${rr.gem} ${rr.name.toUpperCase()} ` : "a "}${L.tier > 1 ? `T${L.tier} ` : ""}${sz ? sz.toLowerCase() + " " : ""}${f.name} (${L.kg} kg)!`;
     if (first) text += " 📖 New in the journal!";
     else if (record) text += " 🏆 New record!";
     if (up) text += ` 🎣 Fishing level ${up}!`;
@@ -2800,8 +2829,8 @@ function drawReel(now, sw, sh) {
   ctx.font = `bold ${Math.round(clamp(rad * .13, 12, 17))}px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.lineWidth = 4; ctx.strokeStyle = "#08203a";
   const L0 = state.players[net.seat].line, wname = L0 ? WATER_NAMES[tileAt(L0.x, L0.y)] || "" : "";
-  const title = `${wname ? wname + " · " : ""}${f.rarity ? `${rr.gem} ${rr.name}` : "Common"}`;
-  ctx.strokeText(title, cx, cy - rad - ringW - 10); ctx.fillStyle = rr.col; ctx.fillText(title, cx, cy - rad - ringW - 10);
+  const title = `${wname ? wname + " · " : ""}T${R.tier || 1} · ${f.rarity ? `${rr.gem} ${rr.name}` : "Common"}${R.gap > 0 ? " ⚠️" : ""}`;
+  ctx.strokeText(title, cx, cy - rad - ringW - 10); ctx.fillStyle = R.gap > 0 ? "#ff8a7a" : rr.col; ctx.fillText(title, cx, cy - rad - ringW - 10);
   // line strain
   const bw = rad * 1.5, bx = cx - bw / 2, by = cy + rad + ringW + 8;
   ctx.fillStyle = "#0e2a4a"; ctx.fillRect(bx, by, bw, 9); ctx.strokeStyle = "#f4ecd0"; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, 9);
@@ -3021,12 +3050,20 @@ function startReel(L) {
   const f = { d: f0.d + (L.dBoost || 0) };          // Sky Island floors make every fish fight harder
   const R = {
     id: L.id, fish: L.fish, r, d: f.d, t: 0, rodPow: rod.power, ang: Math.random() * TAU, dir: 1,
-    speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - rod.power * .05),          // radians per second
+    speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - effPow(rod) * .05),          // radians per second
     green: clamp(.8 - r * .09 - f.d * .012 + rod.power * .06 + lvl * .01, .36, .9),  // width of a catch zone (radians)
     need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0) + Math.floor((L.dBoost || 0) / 2), got: 0, strain: 0, zones: [], fx: [],
     flipAt: r >= 3 ? 1.6 + Math.random() * 2 : Infinity, pull: r >= 3 ? .03 * (r - 2) : r === 2 ? 0 : -.05,
   };
-  const reds = Math.min(5, r + (f.d >= 5 ? 1 : 0));
+  const gap = L.gap || 0;
+  if (gap > 0) {                                             // fishing above your rod: very difficult
+    R.speed = Math.min(5.2, R.speed * (1 + .35 * gap));
+    R.green = Math.max(.2, R.green * Math.max(.4, 1 - .3 * gap));
+    R.need += 2 * gap; R.pull = Math.max(R.pull, 0) + .07 * gap;
+    if (R.flipAt === Infinity) R.flipAt = 1.4 + Math.random() * 1.5;
+  } else if (gap < 0) R.green = Math.min(.95, R.green * (1 + .04 * -gap));
+  R.tier = L.tier || 1; R.gap = gap;
+  const reds = Math.min(6, r + (f.d >= 5 ? 1 : 0) + Math.max(0, gap) * 2);
   for (let i = 0; i < reds; i++) placeZone(R, { kind: "red", w: .32 + Math.random() * .22 + r * .02, vel: r >= 4 || (r >= 3 && i === 0) ? (Math.random() < .5 ? -1 : 1) * (.35 + Math.random() * .3) : 0 });
   placeZone(R, { kind: "green", w: R.green });
   fishing.reel = R; fishing.phase = "reel";
@@ -3069,11 +3106,11 @@ function dialTap() {
     R.fx.push({ text: perfect ? "Perfect!" : "Nice!", col: perfect ? "#ffe070" : "#9af08a", t0: R.t, ring: "#9af08a" });
     sfx(perfect ? "perfect" : "hit");
   } else if (z && z.kind === "red") {
-    R.strain += .42 * (1 - R.rodPow * .07); R.got = Math.max(0, R.got - 1);
+    R.strain += .42 * (1 - Math.min(R.rodPow, 5) * .07); R.got = Math.max(0, R.got - 1);
     R.fx.push({ text: "Snagged!", col: "#ff8a7a", t0: R.t, ring: "#ff5a4a" });
     sfx("snag"); try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch {}
   } else {
-    R.strain += .16 * (1 - R.rodPow * .07);
+    R.strain += .16 * (1 - Math.min(R.rodPow, 5) * .07);
     R.fx.push({ text: "Miss", col: "#bfe0f4", t0: R.t });
     sfx("miss");
   }
@@ -3124,7 +3161,8 @@ function updateActLabel(me, hn) {
   } else {
     const f = facing(me);
     if (f && f.kind === "building") label = f.b.kind === "chest" && state.sky && state.sky.chests[CUR.room] ? "✅<br>Empty" : f.b.act;
-    else if (f && f.kind === "water") label = `🎣<br><small style="font-size:.62em">${WATER_NAMES[tileAt(f.x, f.y)] || ""}</small>`;
+    else if (f && f.kind === "water") { const t = holeTier(me, f.x, f.y), over = t > rodTier(me);
+      label = `🎣<br><small style="font-size:.62em">${WATER_NAMES[tileAt(f.x, f.y)] || ""}</small><br><small style="font-size:.6em;${over ? "color:#c0281a;font-weight:900" : ""}">${over ? "⚠️ " : ""}T${t}</small>`; }
     else if (!f) label = "✋<br>Use";
   }
   const key = label + hot;
@@ -3266,7 +3304,7 @@ function renderHud() {
   document.getElementById("hud-gold").textContent = state.team.gold.toLocaleString();
   document.getElementById("hud-lvl").textContent = lvl;
   const a = XP_AT[lvl - 1], b = XP_AT[lvl] ?? a;
-  document.getElementById("hud-xp").style.width = (lvl >= 10 ? 100 : Math.round((me.xp - a) / (b - a) * 100)) + "%";
+  document.getElementById("hud-xp").style.width = (lvl >= MAX_LVL ? 100 : Math.round((me.xp - a) / (b - a) * 100)) + "%";
   document.getElementById("hud-cooler").textContent = document.getElementById("hud-cooler2").textContent = `${me.items.length}/${COOLERS[me.cooler].size}`;
   const bait = me.useBait !== "none" && BAITS[me.useBait] && me.bait[me.useBait] > 0 ? `${BAITS[me.useBait].icon} ×${me.bait[me.useBait]}` : "🪝 no bait";
   document.getElementById("hud-bait").textContent = bait;
@@ -3292,7 +3330,7 @@ function renderDebug(title, note, body) {
     <div class="setrow">${B("📖 All World 1 fish (unlocks ferry)", { what: "dex", set: "w1" })}${B("📖 Every fish", { what: "dex", set: "all" })}${B("📖 Sky fish", { what: "dex", set: "sky" })}${B("🧹 Clear journal", { what: "cleardex" })}${B("🗑️ Empty cooler", { what: "empty" })}</div>
     <div class="opt-title">Rods & level</div>
     <div class="setrow">${RODS.map((r, i) => B(`${rodIcon(i)} ${r.name.replace(" Rod", "")}`, { what: "rod", i }, me.rod === i ? "btn-gold" : "")).join("")}</div>
-    <div class="setrow">Level <input id="dbg-level" class="field" type="number" min="1" max="10" value="${levelOf(me.xp)}" style="width:64px;padding:6px">${B("Set level", { what: "level" })}</div>
+    <div class="setrow">Level <input id="dbg-level" class="field" type="number" min="1" max="${MAX_LVL}" value="${levelOf(me.xp)}" style="width:64px;padding:6px">${B("Set level", { what: "level" })}</div>
     <div class="opt-title">Items</div>
     <div class="setrow">${Object.entries(BAITS).map(([id, b]) => B(`+10 ${b.icon} ${b.name}`, { what: "bait", id })).join("")}${B("+3 ⏳ Hourglass", { what: "hourglass" })}${B("🧊 Biggest cooler", { what: "cooler" })}${B("⛴️ Unlock Cloud Island", { what: "unlock" })}</div>
     <div class="opt-title">Time</div>
@@ -3311,7 +3349,7 @@ function renderSide() {
     const free = net.isHost && i > 0 && !here ? ` <button class="free-seat" data-free="${i}" title="Give this seat to someone new (their progress is wiped)">Free seat</button>` : "";
     el.innerHTML = `<h3>${SEAT_ICON[i]} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${i === 0 ? " 👑" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}${free}</h3>
       <div class="stats"><div>🎣 Lv <b>${levelOf(p.xp)}</b></div><div>🐟 <b>${p.caught}</b> caught</div>
-      <div style="color:${RARITY[RODS[p.rod].tier].col}">${rodIcon(p.rod)} ${RODS[p.rod].name}</div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
+      <div style="color:${RARITY[RODS[p.rod].tier].col}">${rodIcon(p.rod)} ${RODS[p.rod].name} <b>T${rodTier(p)}</b></div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
       <div style="grid-column:span 2">🏆 Best: ${esc(best)}</div></div>`;
   });
   const seen = FISH.filter(f => state.dex[f.id]).length;
@@ -3345,15 +3383,19 @@ function renderMenuInner() {
   const row = (ic, name, sub, btn, rc) => `<div class="mrow${rc ? " rar" : ""}" ${rc ? `style="--rc:${rc}"` : ""}><div class="ic">${ic}</div><div class="txt"><b>${name}</b><small>${sub}</small></div>${btn || ""}</div>`;
   if (menuKind === "tackle") {
     title.textContent = "🎣 Tackle Shop"; note.innerHTML = `“Better gear, bigger fish!” — Reel Rita · Team stash: 💰<b>${gold.toLocaleString()}</b><br>Rods upgrade in order. <b>Luck</b>: rarer fish, less junk, quicker bites. <b>Control</b>: wider green zones, a slower needle, less strain from snags.`;
-    let h = `<div class="opt-title">Rods</div>`;
+    const sky = outpost;
+    let h = `<div class="opt-title">${sky ? "☁️ Sky rods (tiers 9–16)" : "Rods (tiers 1–8)"} — yours: <b style="color:var(--gold)">${RODS[me.rod].name} · T${rodTier(me)}</b></div>`;
+    if (!sky) h += `<div class="menu-note" style="margin:0 0 6px">Fishing holes above your rod's tier are very hard. ${cloudUnlocked(state) ? "☁️ Sky rods are sold at the Sky Outpost on Cloud Island." : ""}</div>`;
+    else if (me.rod < 7) h += `<div class="menu-note" style="margin:0 0 6px">Sky rods start after the Mythril Rod (tier 8) — buy it first at the World 1 Tackle Shop.</div>`;
     const lvl = levelOf(me.xp);
     RODS.forEach((r, i) => {
+      if (!!r.sky !== sky) return;
       const rr = RARITY[r.tier], tooLow = lvl < r.lvl;
       const btn = i <= me.rod ? `<button disabled>${i === me.rod ? "Equipped" : "Owned"}</button>`
         : i === me.rod + 1 ? (tooLow ? `<button disabled>🔒 Lv ${r.lvl}</button>` : `<button class="btn-gold" data-buy="rod" data-i="${i}" ${gold < r.price ? "disabled" : ""}>💰${r.price.toLocaleString()}</button>`)
         : `<button disabled>🔒 ${r.price.toLocaleString()}</button>`;
-      const stats = `🎯 Reach ${r.reach} · 🍀 Luck +${rodLuck(r)}% · 💪 Control +${rodControl(r)}%${r.lvl > 1 ? ` · Lv ${r.lvl}+` : ""}`;
-      h += row(rodIcon(i, ""), `${r.name} <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`, stats, btn, rr.col);
+      const stats = `<b>T${i + 1}</b> · 🎯 Reach ${r.reach} · 🍀 Luck +${rodLuck(r)}% · 💪 Control +${rodControl(r)}%${r.lvl > 1 ? ` · Lv ${r.lvl}+` : ""}`;
+      h += row(rodIcon(i, ""), `${r.name} <span class="rtag" style="--rc:${rr.col}">${r.sky ? "☁️ " : ""}${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`, stats, btn, rr.col);
     });
     h += `<div class="opt-title" style="margin-top:10px">Bait (packs of 10)</div>`;
     for (const [id, b] of Object.entries(BAITS))
@@ -3385,7 +3427,7 @@ function renderMenuInner() {
     if (selling && me.items.length) h += `<button class="btn-gold" data-sellall style="width:100%;margin-bottom:8px">Sell everything for 💰${total}</button>`;
     me.items.forEach((it, i) => {
       const f = CATCH[it.id], sz = f.junk ? "" : sizeLabel(f, it.kg), rr = RARITY[f.rarity];
-      h += row(fishIcon(it.id), `${f.name} ${f.junk ? "" : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
+      h += row(fishIcon(it.id), `${f.name} ${f.junk ? "" : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.t > 1 ? `T${it.t} · ` : ""}${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
         selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`, f.junk ? "" : rr.col);
     });
     if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! The pond is easy; the ocean and deep water hold the big ones. Every water has its own fish.</small></div></div>`;

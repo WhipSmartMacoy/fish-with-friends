@@ -85,6 +85,23 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
   - Gold rods and up glint in your hands.
 - **Fish journal:** tracks every species and the record weight for each one, with team milestones.
 
+## Rod tiers and fishing holes
+- **16 rod tiers:** World 1 rods are tiers 1–8, and the ☁️ **Sky rods** are tiers 9–16 (Cloud, Zephyr, Storm, Rainbow, Starlight, Aurora, Comet, Cosmic).
+  - Sky rods are sold only at the Sky Outpost, after the Mythril Rod, and need fishing level 10–18. The level cap is now 20.
+- **Every fishing hole (each 3×3 patch of water) has a tier:**
+  - **World 1:** most holes match your rod's tier, about 10% are one tier higher and about 5% are two higher.
+  - **Sky Island:** holes start at tier 9 on floor 1 and go up one tier every two floors, with the same chance of a higher hole.
+- **Fishing above your rod's tier is very difficult:**
+  - the dial's needle is faster;
+  - the green zone is narrower;
+  - there are more red snags;
+  - you need more taps;
+  - line strain builds up;
+  - you get less time to hook.
+  - One tier over is tough. Two or more is nearly impossible.
+- **Higher tiers pay more:** each tier adds 15% to a catch's price and XP.
+- **Seeing the tier:** the Cast button shows the hole's tier (⚠️ in red when it's above your rod), and so does the dial title. Your cooler lists each catch's tier.
+
 ## World 2: Cloud Island and the Sky Island
 - **Unlocking it:** once your team has caught every non-legendary fish in World 1 (29 species), the ⛴️ **Cloud Ferry** at the end of the ocean pier starts running. The journal shows your progress.
 - **Cloud Island** is a small floating home base:
