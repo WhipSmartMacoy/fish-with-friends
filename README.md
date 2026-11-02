@@ -76,6 +76,9 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Shops:**
   - 🐟 **Fish Market:** sell your catch (bigger fish are worth more) into the shared **team stash**.
   - 🎣 **Tackle Shop:** rods, bait (Worms, Shiny Lure, Glow Bait), ⏳ Hourglass Charms and bigger coolers.
+  - 🥪 **Sal's Sandwiches:** a little roadside shack somewhere out of town in World 1, in a different spot in every world. 🦝 **Sal** the raccoon only opens on **Fridays** (by the host's clock); the rest of the week the shutters are down.
+    - His Friday Special costs **💰10,000**. Eat it from your 🧊 cooler for **1 hour** of bonuses: 🍀 rarer fish, ⚡ 30% quicker bites, and a 💪 steadier reel (a wider green zone and a slower needle).
+    - The bonus is just for you, and works in World 1 and on the Sky Island. Eating another adds another hour. Sandwiches keep in your cooler, so you can buy them on Friday and eat them later. The HUD shows the minutes left, for example "🥪 42m".
 - **8 rod tiers.** You upgrade them in order, and the better ones need a higher fishing level:
 
   | Rod | Rarity | Reach | Luck | Control | Fishing level | Price |
@@ -135,6 +138,7 @@ Type **EEEEE** in the join box and press Join. It opens the debug lobby, or join
 - **Fish and gold:** give gold, add any fish or junk to your cooler, and fill or clear the journal.
 - **Gear and items:** set any rod or fishing level, add bait, Hourglass Charms and the biggest cooler, and unlock Cloud Island.
 - **🌍 New World 1:** generate a fresh World 1 for the debug lobby.
+- **🦝 Sal:** force Friday on or off, and **+3 🥪** sandwiches.
 - **Travel:** go to World 1, Cloud Island, any Sky Island floor or straight to the pool room. You can also clear the floor or catch its special fish.
 - **Time:** switch between day, night and the real clock.
 

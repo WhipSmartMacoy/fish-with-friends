@@ -877,7 +877,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1930";
+const BUILD = "2026.11.02-2015";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1080,6 +1080,7 @@ function genWorld() {
     else if (hash2(x, y, 13) < .012) set(x, y, T.ROCK);
     else if (hash2(x, y, 14) < .05) set(x, y, T.FLOWER);
   }
+  placeSal(1);                                  // Sal's Friday sandwich shack
   computeDepth();
 }
 let W1_PIER = { x: 60, y: 30.5 };
@@ -1243,7 +1244,7 @@ function setupFloor(floor) {
 }
 function rollSky(p, now) {
   const sk = state.sky, rod = RODS[p.rod], bait = p.useBait && p.bait[p.useBait] > 0 ? p.useBait : null, tier = sk ? sk.tier : 1;
-  const rare = 1 + rod.power * .15 + (bait === "lure" ? 1 : 0) + (bait === "glow" ? .6 : 0);
+  const rare = 1 + rod.power * .15 + (bait === "lure" ? 1 : 0) + (bait === "glow" ? .6 : 0) + (isFed(p, now) ? .8 : 0);
   const pool = SKY_FISH.map(f => ({ f, w: RAR_WEIGHT[f.rar] * (1 + tier * .12 * f.rar) * (f.rar >= 2 ? rare : 1) * (sk && f.id === sk.special ? 3 : 1) }));
   pool.push({ f: CATCH.feather, w: 4 * Math.max(.3, 1 - rod.power * .15) }, { f: CATCH.chest, w: .8 });
   let roll = Math.random() * pool.reduce((a, o) => a + o.w, 0), pick = pool[0].f;
@@ -1252,7 +1253,7 @@ function rollSky(p, now) {
   let t = Math.pow(Math.random(), 1.4 - Math.min(.5, tier * .03));
   if (LOOKS.pet[look.pet] === "Cat") t = Math.min(1, t * 1.08 + .04);
   const kg = +(pick.kg[0] + (pick.kg[1] - pick.kg[0]) * t).toFixed(2);
-  let wait = (2000 + Math.random() * 4500) * (1 - rod.power * .06) * (bait === "worms" ? .6 : 1);
+  let wait = (2000 + Math.random() * 4500) * (1 - rod.power * .06) * (bait === "worms" ? .6 : 1) * (isFed(p, now) ? .7 : 1);
   const win = Math.max(600, 1250 - ((pick.d || 1) + (sk ? sk.boost : 0)) * 45) + (LOOKS.pet[look.pet] === "Dog" ? 450 : 0);
   return { fish: pick.id, kg, biteAt: now + Math.round(wait), win, bait, floor: sk ? sk.floor : 1, dBoost: sk ? sk.boost : 0 };
 }
@@ -1355,7 +1356,7 @@ function travelAction(seat, a, now) {
 
 // ================= Procedural World 1: each room makes its own world from a seed (saved with the room) =================
 // "classic" is the original hand-shaped map (lobbies made before worlds were generated keep it).
-const BASE_BUILDINGS = BUILDINGS.filter(b => b.id !== "ferry").map(b => ({ ...b }));
+const BASE_BUILDINGS = BUILDINGS.filter(b => b.id !== "ferry" && b.id !== "sal").map(b => ({ ...b }));
 const waterAtW = (x, y) => isWater(tileAt(x, y));
 let WORLD_SEED = "classic", W1_LABELS = [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]];
 const CLASSIC = { spawns: SPAWNS.map(s => ({ ...s })), labels: W1_LABELS };
@@ -1478,6 +1479,7 @@ function genProc(seed) {
     else if (hash2(x, y, S + 13) < .012) set(x, y, T.ROCK);
     else if (hash2(x, y, S + 14) < .05) set(x, y, T.FLOWER);
   }
+  placeSal(seed);
   computeDepth();
   // ---- checks: every water reachable on foot, deep enough for its deep-water fish
   const reach = new Uint8Array(MW * MH), q = [idx(startX, startY)]; reach[q[0]] = 1;
@@ -1513,6 +1515,132 @@ function loadWorld(seed) {
 }
 const newWorldSeed = () => window.FWF_SEED ?? 1 + Math.floor(Math.random() * 2e9);   // FWF_SEED: tests can pin a world
 
+// ================= Sal the raccoon: a sandwich shack in World 1, open on Fridays only =================
+// Fridays follow the host's clock (state.tz). An Hourglass bends day and night, not the day of the week.
+const SANDWICH_PRICE = 10000, FED_MS = 60 * 60 * 1000;
+const weekdayAt = t => new Date(t - tzOffset() * 60000).getUTCDay();          // 0 Sunday … 5 Friday
+const salOpen = t => !!(state && state.debugFriday) || weekdayAt(t) === 5;
+const fedLeft = (p, t) => p && p.fed > t ? p.fed - t : 0;                     // ms of sandwich bonus left
+const isFed = (p, t) => fedLeft(p, t) > 0;
+function untilFriday(t) {                                                      // "2 days 5 h" until Sal opens again
+  const local = t - tzOffset() * 60000, d = new Date(local), wd = d.getUTCDay();
+  const startToday = local - (((local % DAY_MS) + DAY_MS) % DAY_MS), days = (5 - wd + 7) % 7 || 7;
+  const ms = startToday + days * DAY_MS - local, h = Math.ceil(ms / 3600000);
+  return h >= 24 ? `${Math.floor(h / 24)} day${Math.floor(h / 24) === 1 ? "" : "s"}${h % 24 ? ` ${h % 24} h` : ""}` : `${h} h`;
+}
+// The shack goes on a road somewhere out of town: the same spot every time for a given world.
+function placeSal(seed) {
+  const v = BUILDINGS[1], vcx = v.x + 1, vcy = v.y + 1, ok = [T.GRASS, T.FLOWER, T.TREE, T.ROCK];
+  const find = minD => {
+    const c = [];
+    for (let y = 2; y < MH - 4; y++) for (let x = 2; x < MW - 3; x++) {
+      if (tileAt(x, y + 2) !== T.PATH || tileAt(x + 1, y + 2) !== T.PATH) continue;
+      if (Math.hypot(x - vcx, y - vcy) < minD) continue;
+      let good = true;
+      for (let yy = y - 1; yy < y + 2 && good; yy++) for (let xx = x; xx < x + 2; xx++)
+        if (!ok.includes(tileAt(xx, yy)) || buildAt[idx(xx, yy)] >= 0) { good = false; break; }
+      for (let yy = y - 1; yy < y + 3 && good; yy++) for (let xx = x - 1; xx < x + 3; xx++)       // keep every shore fishable
+        if (waterAt(xx, yy) || [T.DOCK, T.BRIDGE, T.BUILD].includes(tileAt(xx, yy))) { good = false; break; }
+      if (good) c.push([x, y]);
+    }
+    return c;
+  };
+  const c = find(14).length ? find(14) : find(6);
+  if (!c.length) return;
+  const [x, y] = c[Math.floor(hash2(seed % 9973, 7, 31) * c.length)];
+  const b = { id: "sal", name: "Sal's Sandwiches", x, y, w: 2, h: 2, sign: "🥪", act: "🥪<br>Sal", kind: "shack", roof: "#4f9a94" };
+  const bi = BUILDINGS.push(b) - 1;
+  for (let yy = y; yy < y + 2; yy++) for (let xx = x; xx < x + 2; xx++) { tiles[idx(xx, yy)] = T.BUILD; buildAt[idx(xx, yy)] = bi; }
+  if (tileAt(x, y - 1) === T.TREE) tiles[idx(x, y - 1)] = T.GRASS;            // a little breathing room behind the roof
+  if (tileAt(x + 1, y - 1) === T.TREE) tiles[idx(x + 1, y - 1)] = T.GRASS;
+}
+// ---- Sal: pixel art, a raccoon in a paper hat and an apron
+const SAL_PAL = { d: "#3a3a44", g: "#8a8a96", l: "#c8c8d0", k: "#1c1c24", w: "#ffffff", n: "#101014", p: "#e8a0a8", h: "#f4f4ee", s: "#d0d0c8", a: "#fbfbf6", r: "#e0503c", t: "#2a2a32" };
+const SAL_ROWS = [
+  "....hhhhhhhh........",
+  "...hhhhhhhhhh.......",
+  "...ssssssssss.......",
+  "..dd.dggggd.dd......",
+  "..dpdggggggdpd......",
+  "..dggggggggggd......",
+  ".dgllllllllllgd.....",
+  ".dkkkkllllkkkkd.....",
+  ".dkwnklllkwnkkd.....",
+  ".dkkkkllllkkkkd.....",
+  "..dllllllllld.......",
+  "...dlllnnllld.......",
+  "....dlllllld........",
+  "...dgaaaaaagd.......",
+  "..dggarrrragd.gtg...",
+  "..dlgaaaaaagld.tgt..",
+  "..dl.aaaaaa.ld.gtg..",
+  "....garrrrag..tgt...",
+  "....gaaaaaag.gtg....",
+  "....dgg..ggdgtg.....",
+  "....dd....ddtd......",
+];
+const SAL_ART = [0, 1].map(f => {
+  const c = mkCanvas(20, 21), g = c.getContext("2d");
+  SAL_ROWS.forEach((row, y) => [...row].forEach((ch, x) => {
+    let col = SAL_PAL[ch];
+    if (f && y === 8 && (ch === "w" || ch === "n")) col = SAL_PAL.k;            // blink
+    if (f && y >= 14 && "gt".includes(ch) && x >= 13) { g.fillStyle = ch === "t" ? SAL_PAL.t : SAL_PAL.g; g.fillRect(x + (y % 2 ? 1 : 0), y, 1, 1); return; }   // tail swish
+    if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+  }));
+  return c;
+});
+function drawSal(P, scale, now) {
+  const f = (now % 3200) < 180 || Math.floor(now / 900) % 4 === 3 ? 1 : 0, img = SAL_ART[f], w = 20 * scale, h = 21 * scale;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, Math.round(P.x - w * .32), Math.round(P.y - h), w, h);
+}
+function drawSandwich(P, s = 1) {                                               // a little stacked sandwich on the counter
+  const L = [["#e8b860", 4], ["#5ac04a", 2], ["#e04a3a", 2], ["#f4d060", 2], ["#e8b860", 3]];
+  let y = P.y; ctx.fillStyle = "#00000033"; ctx.fillRect(P.x - 9 * s, y - 1, 18 * s, 2);
+  for (const [c, hgt] of L) { ctx.fillStyle = c; ctx.fillRect(P.x - 8 * s, y - hgt * s, 16 * s, hgt * s); y -= hgt * s; }
+  ctx.fillStyle = "#c08a3a"; ctx.fillRect(P.x - 8 * s, y, 16 * s, 1);
+}
+function drawShackIso(b, now) {
+  // drawn back to front: back wall, side wall, roof, then Sal leaning on the counter, then the counter itself
+  const i0 = b.x, i1 = b.x + b.w, j0 = b.y + .1, j1 = b.y + b.h, a = iso, open = salOpen(hostNow()), H = 2.1, R0 = H + .75;
+  polyFill(ctx, [a(i0, j1 + .2), a(i1 + .2, j1 + .2), a(i1 + .2, j0), a(i0, j0)], "rgba(0,0,0,.18)");
+  polyFill(ctx, [a(i0, j0, 0), a(i1, j0, 0), a(i1, j0, H), a(i0, j0, H)], "#7a5434", "#3a2414");
+  polyFill(ctx, [a(i1, j1, 0), a(i1, j0, 0), a(i1, j0, H), a(i1, j1, H)], "#8a5a2a", "#4a2c18");
+  ctx.strokeStyle = "#5a3418"; ctx.lineWidth = 1;
+  for (let k = 1; k < 7; k++) { const p2 = a(i1, j1, k * .32), p3 = a(i1, j0, k * .32); ctx.beginPath(); ctx.moveTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.stroke(); }
+  // a sloped tin roof that stops at the front posts
+  polyFill(ctx, [a(i0 - .15, j0 - .1, R0), a(i1 + .15, j0 - .1, R0), a(i1 + .15, j1 - .45, H + .2), a(i0 - .15, j1 - .45, H + .2)], b.roof, shadeOf(b.roof, .55), 1.5);
+  polyFill(ctx, [a(i1 + .15, j1 - .45, H + .2), a(i1 + .15, j0 - .1, R0), a(i1 + .15, j0 - .1, R0 - .15), a(i1 + .15, j1 - .45, H + .05)], shadeOf(b.roof, .7));
+  ctx.strokeStyle = "rgba(255,255,255,.28)"; ctx.lineWidth = 1;
+  for (let k = 1; k < 7; k++) { const u = i0 - .15 + (i1 - i0 + .3) * k / 7, p1 = a(u, j0 - .1, R0), p2 = a(u, j1 - .45, H + .2); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+  ctx.strokeStyle = "#4a2c18"; ctx.lineWidth = 3;
+  for (const px of [i0 + .04, i1 - .04]) { const p = a(px, j1 - .45, .95), q = a(px, j1 - .45, H + .2); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+  if (open) {
+    const lamp = a(i0 + .35, j1 - .45, H); ctx.fillStyle = "#ffe8a0"; ctx.beginPath(); ctx.arc(lamp.x, lamp.y + 5, 3.5, 0, 7); ctx.fill();
+    drawSal(a(i0 + .95, j1 - .3, .55), 3, now);   // standing on a crate behind the counter
+  } else {                                                                        // shutters down
+    polyFill(ctx, [a(i0, j1 - .45, .95), a(i1, j1 - .45, .95), a(i1, j1 - .45, H + .2), a(i0, j1 - .45, H + .2)], "#9a6a38", "#4a2c18");
+    ctx.strokeStyle = "#6a4420"; ctx.lineWidth = 1;
+    for (let k = 1; k < 5; k++) { const z = .95 + k * (H + .2 - .95) / 5, p1 = a(i0, j1 - .45, z), p2 = a(i1, j1 - .45, z); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+  }
+  // the counter: front, top and right side, with sandwiches on it
+  polyFill(ctx, [a(i0, j1 - .45, .95), a(i1, j1 - .45, .95), a(i1, j1, .95), a(i0, j1, .95)], "#c89458", "#5a3418");
+  polyFill(ctx, [a(i0, j1, 0), a(i1, j1, 0), a(i1, j1, .95), a(i0, j1, .95)], "#a8743e", "#4a2c18");
+  polyFill(ctx, [a(i1, j1, 0), a(i1, j1 - .45, 0), a(i1, j1 - .45, .95), a(i1, j1, .95)], "#8a5a2a", "#4a2c18");
+  ctx.strokeStyle = "#7a4a24"; ctx.lineWidth = 1;
+  for (let k = 1; k < 3; k++) { const p1 = a(i0, j1, k * .32), p2 = a(i1, j1, k * .32); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+  if (open) { drawSandwich(a(i0 + .35, j1 - .2, .95), 1); drawSandwich(a(i1 - .3, j1 - .2, .95), .9); }
+  else {
+    const c = a(i0 + 1, j1 - .45, 1.55), fs = Math.round(9 * Math.min(ui, 1.4));
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(-.12);
+    ctx.font = `bold ${fs}px "Trebuchet MS", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const tw = ctx.measureText("CLOSED · FRI ONLY").width + 8;
+    ctx.fillStyle = "#f4ead0"; ctx.strokeStyle = "#5a3418"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(-tw / 2, -fs * .75, tw, fs * 1.5, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#b03020"; ctx.fillText("CLOSED · FRI ONLY", 0, .5); ctx.restore();
+  }
+  signBoard(b, a(b.x + b.w / 2 + .2, j0 + .2, R0 + .45));
+}
+
 // ================= Debug lobby (code EEEEE): playtest tools =================
 const DEBUG_CODE = "EEEEE";
 const isDebug = () => net.code === DEBUG_CODE;
@@ -1546,6 +1674,8 @@ function debugAction(seat, a) {
     case "level": p.xp = XP_AT[clamp((a.n | 0) - 1, 0, MAX_LVL - 1)]; return say(`Fishing level ${levelOf(p.xp)}`);
     case "bait": p.bait[a.id] = (p.bait[a.id] || 0) + 10; return say(`+10 ${BAITS[a.id].name}`);
     case "hourglass": p.hourglass = (p.hourglass || 0) + 3; return say("+3 Hourglass Charms");
+    case "sandwich": p.sandwich = (p.sandwich || 0) + 3; return say("+3 of Sal's sandwiches");
+    case "friday": state.debugFriday = !state.debugFriday; return say(state.debugFriday ? "🦝 Sal is open (debug Friday)" : "🦝 Sal follows the real calendar");
     case "cooler": p.cooler = COOLERS.length - 1; return say("Biggest cooler");
     case "empty": p.items = []; return say("Cooler emptied");
     case "time": state.warp = a.mode ? { mode: a.mode, until: Date.now() + WARP_MS, by: "debug" } : null; return say(a.mode ? `Time: ${a.mode} for 30 min` : "Time: real clock");
@@ -1827,7 +1957,7 @@ function rollCatch(p, tx, ty, now) {
     night = isNight(now), lvl = levelOf(p.xp);
   const bait = p.useBait && p.bait[p.useBait] > 0 ? p.useBait : null;
   const hot = nearHot(tx, ty, now), rod = RODS[p.rod];
-  let rare = 1 + rod.power * .15 + (hot ? .6 : 0) + (bait === "lure" ? 1 : 0) + (bait === "glow" && (night || deep) ? 1.2 : 0);
+  let rare = 1 + rod.power * .15 + (hot ? .6 : 0) + (bait === "lure" ? 1 : 0) + (bait === "glow" && (night || deep) ? 1.2 : 0) + (isFed(p, now) ? .8 : 0);
   const pool = FISH.filter(f => f.water.includes(kind) && f.lvl <= lvl && (!f.time || f.time === (night ? "night" : "day")) && (!f.deep || deep))
     .map(f => ({ f, w: f.rarity >= 2 ? f.w * rare : f.rarity === 1 ? f.w * (1 + (rare - 1) * .4) : f.w }));
   pool.push(...JUNK.filter(f => !f.sky).map(f => ({ f, w: f.treasure ? f.w * (1 + rod.power * .2) : f.w * Math.max(.3, 1 - rod.power * .15 - (bait ? .3 : 0)) })));
@@ -1841,6 +1971,7 @@ function rollCatch(p, tx, ty, now) {
   wait *= 1 - effPow(rod) * .06;
   if (bait === "worms") wait *= .6; else if (bait === "glow" && (night || deep)) wait *= .75;
   if (hot) wait *= .65;
+  if (isFed(p, now)) wait *= .7;
   const dog = LOOKS.pet[look.pet] === "Dog";
   const win = Math.max(650, 1300 - (pick.d || 1) * 45) + (dog ? 450 : 0);
   return { fish: pick.id, kg, biteAt: now + Math.round(wait), win, bait };
@@ -1936,6 +2067,13 @@ function applyActionCore(seat, a) {
       state.team.gold -= HOURGLASS_PRICE; p.hourglass = (p.hourglass || 0) + 1;
       return { text: `+1 ⏳ Hourglass Charm (you have ${p.hourglass}). Use it from your 🧊 cooler.`, ok: true, seat, private: true, sfx: "coin" };
     }
+    if (a.what === "sandwich") {
+      if (!salOpen(now)) return { text: "🦝 Sal's shack is closed — he only comes out on Fridays.", ok: false, seat, private: true };
+      if (state.team.gold < SANDWICH_PRICE) return { text: `A sandwich is 💰${SANDWICH_PRICE.toLocaleString()} — not enough in the team stash.`, ok: false, seat, private: true };
+      state.team.gold -= SANDWICH_PRICE; p.sandwich = (p.sandwich || 0) + 1;
+      const text = `${p.name} bought one of 🦝 Sal's sandwiches! Eat it from your 🧊 cooler for an hour of bonuses.`; addLog(text, true);
+      return { text, ok: true, seat, sfx: "coin" };
+    }
     if (a.what === "cooler") {
       const i = p.cooler + 1, c = COOLERS[i]; if (!c) return null;
       if (state.team.gold < c.price) return { text: "Not enough gold in the team stash.", ok: false, seat, private: true };
@@ -1952,6 +2090,13 @@ function applyActionCore(seat, a) {
     state.warp = { mode: a.mode, until: from + WARP_MS, by: p.name };
     const mins = Math.round((state.warp.until - now) / 60000);
     const text = a.mode === "night" ? `${p.name} turned the ⏳ Hourglass — 🌙 night for ${mins} minutes! Night fish are biting.` : `${p.name} turned the ⏳ Hourglass — ☀️ daylight for ${mins} minutes! Day fish are biting.`;
+    addLog(text, true);
+    return { text, ok: true, seat, sfx: "rare" };
+  }
+  if (a.type === "eat") {
+    if (!(p.sandwich > 0)) return null;
+    p.sandwich--; p.fed = Math.max(now, p.fed || 0) + FED_MS;                  // another sandwich adds another hour
+    const mins = Math.round((p.fed - now) / 60000), text = `${p.name} ate 🦝 Sal's sandwich — 🍀 rarer fish, ⚡ quicker bites and 💪 a steadier reel for ${mins} minutes!`;
     addLog(text, true);
     return { text, ok: true, seat, sfx: "rare" };
   }
@@ -2489,6 +2634,7 @@ function drawChestIso(b, now) {
 function drawBuildingIso(b, now) {
   if (b.kind === "boat") return drawBoatIso(b, now);
   if (b.kind === "chest") return drawChestIso(b, now);
+  if (b.kind === "shack") return drawShackIso(b, now);
   return (b.stall ? drawStallIso : drawHouseIso)(b, now);
 }
 // ---- Docks, the pier and bridges: wooden decks on pilings, drawn live above the water (sorted back to front)
@@ -2886,6 +3032,7 @@ function draw(now) {
     drawBiteAlert(i, now);
   }
   if (mapKey === "w1") for (const id of ["tackle", "market"]) { const kp = KEEPER_SPOT[id](), P = iso(kp.x, kp.y); label(SHOPKEEPS[id].name, P.x, P.y - 66, "#ffe8a0", 9); }
+  if (mapKey === "w1" && salOpen(hostNow())) { const sb = BUILDINGS.find(b => b.id === "sal"); if (sb) { const P = iso(sb.x + .95, sb.y + sb.h - .3); label("🦝 Sal", P.x, P.y - 92, "#ffe8a0", 9); } }
   for (const d of CUR.portals) { const P = iso(d.x + .5, d.y + .5); label(portalInfo(d), P.x, P.y - 40, "#f0e0ff", 10); }
   if (state.sky && CUR.room === 0 && inSky(state.players[net.seat])) {
     const P = iso(6.5, 6.5, .7), sk = state.sky;
@@ -3232,6 +3379,7 @@ function startReel(L) {
     R.need += 2 * gap; R.pull = Math.max(R.pull, 0) + .07 * gap;
     if (R.flipAt === Infinity) R.flipAt = 1.4 + Math.random() * 1.5;
   } else if (gap < 0) R.green = Math.min(.95, R.green * (1 + .04 * -gap));
+  if (isFed(me, hostNow())) { R.green = Math.min(.95, R.green * 1.2); R.speed *= .9; }    // 🥪 Sal's sandwich: a steadier reel
   R.tier = L.tier || 1; R.gap = gap;
   const reds = Math.min(6, r + (f.d >= 5 ? 1 : 0) + Math.max(0, gap) * 2);
   for (let i = 0; i < reds; i++) placeZone(R, { kind: "red", w: .32 + Math.random() * .22 + r * .02, vel: r >= 4 || (r >= 3 && i === 0) ? (Math.random() < .5 ? -1 : 1) * (.35 + Math.random() * .3) : 0 });
@@ -3487,7 +3635,8 @@ function renderHud() {
   document.getElementById("hud-xp").style.width = (lvl >= MAX_LVL ? 100 : Math.round((me.xp - a) / (b - a) * 100)) + "%";
   document.getElementById("hud-cooler").textContent = document.getElementById("hud-cooler2").textContent = `${me.items.length}/${COOLERS[me.cooler].size}`;
   const bait = me.useBait !== "none" && BAITS[me.useBait] && me.bait[me.useBait] > 0 ? `${BAITS[me.useBait].icon} ×${me.bait[me.useBait]}` : "🪝 no bait";
-  document.getElementById("hud-bait").textContent = bait;
+  const fl = fedLeft(me, hostNow());
+  document.getElementById("hud-bait").textContent = bait + (fl ? ` · 🥪 ${Math.ceil(fl / 60000)}m` : "");
   document.getElementById("hud-time").textContent = `${clockText(hostNow())} ${periodOf(hostNow())}`;
   const sc = document.getElementById("hud-sky"), sk = state.sky;
   sc.classList.toggle("hidden", !(sk && inSky(me)));
@@ -3512,7 +3661,7 @@ function renderDebug(title, note, body) {
     <div class="setrow">${RODS.map((r, i) => B(`${rodIcon(i)} ${r.name.replace(" Rod", "")}`, { what: "rod", i }, me.rod === i ? "btn-gold" : "")).join("")}</div>
     <div class="setrow">Level <input id="dbg-level" class="field" type="number" min="1" max="${MAX_LVL}" value="${levelOf(me.xp)}" style="width:64px;padding:6px">${B("Set level", { what: "level" })}</div>
     <div class="opt-title">Items</div>
-    <div class="setrow">${Object.entries(BAITS).map(([id, b]) => B(`+10 ${b.icon} ${b.name}`, { what: "bait", id })).join("")}${B("+3 ⏳ Hourglass", { what: "hourglass" })}${B("🧊 Biggest cooler", { what: "cooler" })}${B("⛴️ Unlock Cloud Island", { what: "unlock" })}</div>
+    <div class="setrow">${Object.entries(BAITS).map(([id, b]) => B(`+10 ${b.icon} ${b.name}`, { what: "bait", id })).join("")}${B("+3 ⏳ Hourglass", { what: "hourglass" })}${B("+3 🥪 Sandwich", { what: "sandwich" })}${B(state.debugFriday ? "🦝 Sal: real calendar" : "🦝 Sal: force Friday", { what: "friday" })}${B("🧊 Biggest cooler", { what: "cooler" })}${B("⛴️ Unlock Cloud Island", { what: "unlock" })}</div>
     <div class="opt-title">Time</div>
     <div class="setrow">${B("☀️ Day", { what: "time", mode: "day" })}${B("🌙 Night", { what: "time", mode: "night" })}${B("🕐 Real clock", { what: "time" })}</div>`;
 }
@@ -3588,6 +3737,15 @@ function renderMenuInner() {
     const nx = COOLERS[me.cooler + 1];
     h += row("🧊", nx ? `Bigger cooler (${nx.size} slots)` : "Biggest cooler", `Yours holds ${COOLERS[me.cooler].size} catches.`, nx ? `<button class="btn-gold" data-buy="cooler" ${gold < nx.price ? "disabled" : ""}>💰${nx.price.toLocaleString()}</button>` : "");
     body.innerHTML = h;
+  } else if (menuKind === "sal") {
+    const hn = hostNow(), open = salOpen(hn), fl = fedLeft(me, hn);
+    title.textContent = "🥪 Sal's Sandwiches";
+    note.innerHTML = open ? `“Heya, pal! Fresh outta the cooler, made 'em myself. Don't ask where I got the bread.” — 🦝 Sal · Team stash: 💰<b>${gold.toLocaleString()}</b>`
+                          : `The shutters are down. A note on the counter says: <i>“Gone fishin'. Back Friday. — Sal”</i><br>Sal opens in <b>${untilFriday(hn)}</b> (host's clock).`;
+    let h = row("🥪", `Sal's Friday Special <small style="display:inline;color:var(--gold)">you have ${me.sandwich || 0}</small>`,
+      `Eat it from your 🧊 cooler for <b>1 hour</b> of 🍀 rarer fish, ⚡ 30% quicker bites and a 💪 steadier reel (wider green, slower needle). Another sandwich adds another hour.${fl ? ` <b style="color:var(--good)">Active: ${Math.ceil(fl / 60000)} min left.</b>` : ""}`,
+      open ? `<button class="btn-gold" data-buy="sandwich" ${gold < SANDWICH_PRICE ? "disabled" : ""}>💰${SANDWICH_PRICE.toLocaleString()}</button>` : `<button disabled>🔒 Friday</button>`);
+    body.innerHTML = h;
   } else if (menuKind === "market" || menuKind === "cooler") {
     const selling = menuKind === "market";
     title.textContent = selling ? "🐟 Fish Market" : "🧊 Your cooler";
@@ -3600,6 +3758,10 @@ function renderMenuInner() {
       if (has || w) h += row("⏳", `Hourglass Charm ×${me.hourglass || 0}`,
         w ? `Holding ${w.mode === "night" ? "🌙 night" : "☀️ day"} for ${warpLeft(hn)} more min (turned by ${esc(w.by)}).` : "30 minutes of day or night for the whole lobby.",
         `<span style="display:flex;gap:6px"><button data-warp="day" ${has ? "" : "disabled"}>☀️ Day</button><button data-warp="night" ${has ? "" : "disabled"}>🌙 Night</button></span>`);
+      const fl = fedLeft(me, hn), sw = me.sandwich || 0;
+      if (sw || fl) h += row("🥪", `Sal's sandwich ×${sw}`,
+        fl ? `Bonus active: ${Math.ceil(fl / 60000)} min left. 🍀 rarer fish · ⚡ quicker bites · 💪 steadier reel${sw ? " — eat another to add an hour" : ""}.` : "Eat it for an hour of 🍀 rarer fish, ⚡ quicker bites and a 💪 steadier reel.",
+        `<button class="btn-gold" data-eat="1" ${sw ? "" : "disabled"}>😋 Eat</button>`);
       h += `<div class="opt-title">Bait on your hook</div><div class="choices" style="margin-bottom:10px">` +
         [["none", "🪝 None"], ...Object.entries(BAITS).map(([id, b]) => [id, `${b.icon} ${b.name} ×${me.bait[id] || 0}`])].map(([id, t]) =>
           `<button class="style ${me.useBait === id ? "on" : ""}" data-bait="${id}" ${id !== "none" && !(me.bait[id] > 0) ? "disabled" : ""}>${t}</button>`).join("") + `</div>`;
@@ -3661,6 +3823,7 @@ document.getElementById("menu-body").addEventListener("click", e => {
   else if (b.dataset.release) sendAction({ type: "release", i: +b.dataset.release });
   else if (b.dataset.bait) sendAction({ type: "bait", id: b.dataset.bait });
   else if (b.dataset.warp) sendAction({ type: "warp", mode: b.dataset.warp });
+  else if (b.dataset.eat) sendAction({ type: "eat" });
   else if (b.dataset.tab) { journalTab = b.dataset.tab; renderMenu(); }
   else if (b.dataset.setSide) { writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), actSide: b.dataset.setSide }); applyControlPrefs(); renderMenu(); }
   else if (b.dataset.setZoom) { zoom = +b.dataset.setZoom; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), zoom }); document.getElementById("zoom-btn").textContent = ZOOMS[zoom].icon; renderMenu(); }
