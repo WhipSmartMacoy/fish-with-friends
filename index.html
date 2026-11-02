@@ -877,7 +877,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1900";
+const BUILD = "2026.11.02-1930";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -991,7 +991,7 @@ let BUILDINGS = [
 ];
 // Up to four anglers. A room starts with just the host and grows as friends join.
 const MAX_PLAYERS = 4;
-const SPAWNS = [{ x: 9.5, y: 30.5 }, { x: 11.5, y: 30.5 }, { x: 13.5, y: 30.5 }, { x: 15.5, y: 30.5 }];
+let SPAWNS = [{ x: 9.5, y: 30.5 }, { x: 11.5, y: 30.5 }, { x: 13.5, y: 30.5 }, { x: 15.5, y: 30.5 }];
 const SEAT_COL = ["#8fd0ff", "#ffb08a", "#9af08a", "#e0a0ff"], SEAT_ICON = ["🔵", "🟠", "🟢", "🟣"];
 const CID_KEY = "fwf-cid";
 const CID = window.FWF_CID || readJSONEarly(CID_KEY) || (() => { const c = Math.random().toString(36).slice(2, 12); try { localStorage.setItem(CID_KEY, JSON.stringify(c)); } catch {} return c; })();
@@ -1353,6 +1353,166 @@ function travelAction(seat, a, now) {
   return null;
 }
 
+// ================= Procedural World 1: each room makes its own world from a seed (saved with the room) =================
+// "classic" is the original hand-shaped map (lobbies made before worlds were generated keep it).
+const BASE_BUILDINGS = BUILDINGS.filter(b => b.id !== "ferry").map(b => ({ ...b }));
+const waterAtW = (x, y) => isWater(tileAt(x, y));
+let WORLD_SEED = "classic", W1_LABELS = [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]];
+const CLASSIC = { spawns: SPAWNS.map(s => ({ ...s })), labels: W1_LABELS };
+function freshW1Arrays() {
+  MW = 75; MH = 75;
+  tiles = new Uint8Array(MW * MH); under = new Uint8Array(MW * MH); depth = new Uint8Array(MW * MH); buildAt = new Int8Array(MW * MH).fill(-1);
+  BUILDINGS = BASE_BUILDINGS.map(b => ({ ...b }));
+}
+function genProc(seed) {
+  const rnd = mulberry(seed), ri = (a, b) => a + Math.floor(rnd() * (b - a + 1)), S = seed % 100000;
+  const set = (x, y, t) => { if (inMap(x, y)) tiles[idx(x, y)] = t; };
+  const blob = (cx, cy, rx, ry, t, wob, ns, keep) => {
+    for (let y = Math.floor(cy - ry - 3); y <= cy + ry + 3; y++) for (let x = Math.floor(cx - rx - 3); x <= cx + rx + 3; x++) {
+      const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry;
+      if (dx * dx + dy * dy < 1 + wob * (vnoise(x * .25, y * .25, ns) - .5) && (!keep || keep(tileAt(x, y)))) set(x, y, t);
+    }
+  };
+  tiles.fill(T.GRASS);
+  // ---- the coast: one side of the map is ocean, with a sandy beach
+  const side = ri(0, 3);                                    // 0 east, 1 west, 2 south, 3 north
+  const across = (a, b) => side < 2 ? [a, b] : [b, a];     // (along, inward) -> (x, y)
+  const inward = (x, y) => side === 0 ? MW - 1 - x : side === 1 ? x : side === 2 ? MH - 1 - y : y;   // distance from the coast edge
+  const band = ri(9, 12);
+  for (let a = 0; a < 75; a++) {
+    const c = Math.round(band + 3 * (vnoise(0, a * .12, S + 7) - .5) * 2);
+    for (let d = 0; d < c + 3; d++) { const p = side === 0 ? [74 - d, a] : side === 1 ? [d, a] : side === 2 ? [a, 74 - d] : [a, d]; set(p[0], p[1], d < c ? T.OCEAN : T.SAND); }
+  }
+  const coastP = (along, d) => side === 0 ? [74 - d, along] : side === 1 ? [d, along] : side === 2 ? [along, 74 - d] : [along, d];
+  // ---- the lake, in from the coast, sometimes with an island
+  const lakeD = ri(26, 36), lakeA = ri(22, 52), [lcx, lcy] = coastP(lakeA, lakeD), lrx = ri(8, 11), lry = ri(6, 9);
+  const [LRX, LRY] = side < 2 ? [lrx, lry] : [lry, lrx];
+  blob(lcx, lcy, LRX, LRY, T.LAKE, .5, S + 3);
+  if (rnd() < .7) blob(lcx + ri(-3, 3), lcy + ri(-2, 2), 1.8, 1.4, T.GRASS, .2, S + 4);
+  // ---- the river: from a far map edge into the lake, and from the lake out to the sea
+  const wander = (ax, ay, bx, by, n) => { const pts = [[ax, ay]]; for (let k = 1; k < n; k++) { const t = k / n; pts.push([ax + (bx - ax) * t + (rnd() - .5) * 8, ay + (by - ay) * t + (rnd() - .5) * 8]); } pts.push([bx, by]); return pts; };
+  const carve = (pts, w) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1], n = Math.ceil(Math.hypot(bx - ax, by - ay) * 3);
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+        for (let yy = Math.floor(y - w); yy <= y + w; yy++) for (let xx = Math.floor(x - w); xx <= x + w; xx++)
+          if (Math.hypot(xx + .5 - x, yy + .5 - y) <= w && ![T.LAKE, T.OCEAN].includes(tileAt(xx, yy))) set(xx, yy, T.RIVER);
+      }
+    }
+  };
+  const srcAlong = rnd() < .5 ? ri(4, 18) : ri(56, 70), [rsx, rsy] = coastP(srcAlong, 76);
+  carve(wander(rsx, rsy, lcx, lcy, 5), 1.35);
+  const [rex, rey] = coastP(clamp(lakeA + ri(-14, 14), 4, 70), band - 2);
+  carve(wander(lcx, lcy, rex, rey, 4), 1.35);
+  // ---- the village: an open patch of grass well away from the water
+  const fits = (x0, y0) => { for (let y = y0 - 2; y <= y0 + 7; y++) for (let x = x0 - 2; x <= x0 + 19; x++) { if (!inMap(x, y) || tileAt(x, y) !== T.GRASS) return false; } return true; };
+  const clearOf = (x0, y0) => { let m = 99; for (let y = y0 - 6; y <= y0 + 11; y += 1) for (let x = x0 - 6; x <= x0 + 23; x += 1) if (waterAtW(x, y)) m = Math.min(m, Math.hypot(x - (x0 + 9), y - (y0 + 2))); return m; };
+  let vx = -1, vy = -1;
+  for (let tries = 0; tries < 400 && vx < 0; tries++) { const x = ri(3, 52), y = ri(4, 64); if (fits(x, y) && clearOf(x, y) > 4) { vx = x; vy = y; } }
+  if (vx < 0) return null;
+  const ROW = vy, FRONT = vy + 3, ROAD = vy + 4;
+  BUILDINGS[0].x = vx + 1;  BUILDINGS[1].x = vx + 7;  BUILDINGS[2].x = vx + 13;
+  BUILDINGS.forEach(b => { b.y = ROW; });
+  // ---- ponds: one near the village (with a dock), one farther out in the woods
+  const pondAt = (near) => { for (let t = 0; t < 300; t++) { const x = near ? vx + ri(-6, 24) : ri(6, 68), y = near ? ROAD + ri(6, 12) * (rnd() < .5 ? -1 : 1) : ri(6, 68);
+      if (Math.hypot(x - lcx, y - lcy) < 16 || inward(x, y) < band + 8) continue;
+      let ok = true; for (let yy = y - 5; yy <= y + 5 && ok; yy++) for (let xx = x - 6; xx <= x + 6; xx++) if (!inMap(xx, yy) || tileAt(xx, yy) !== T.GRASS || (xx >= vx - 2 && xx <= vx + 19 && yy >= vy - 2 && yy <= vy + 6)) { ok = false; break; }
+      if (ok) return [x, y]; } return null; };
+  const p1 = pondAt(true) || pondAt(false); if (!p1) return null;
+  blob(p1[0], p1[1], 3.4, 2.8, T.POND, .3, S + 5);
+  const p2 = pondAt(false); if (p2) blob(p2[0], p2[1], 2.8, 2.4, T.POND, .3, S + 6);
+  // ---- roads: A* paths from the village to each water (bridges over the river)
+  const path = (sx, sy, goal) => {
+    const N = MW * MH, g = new Float32Array(N).fill(1e9), from = new Int32Array(N).fill(-1), open = [[0, idx(sx, sy)]]; g[idx(sx, sy)] = 0;
+    while (open.length) {
+      let bi = 0; for (let k = 1; k < open.length; k++) if (open[k][0] < open[bi][0]) bi = k;
+      const [, i] = open.splice(bi, 1)[0], x = i % MW, y = (i / MW) | 0;
+      if (goal(x, y)) { const out = []; for (let j = i; j >= 0; j = from[j]) out.push([j % MW, (j / MW) | 0]); return out.reverse(); }
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue;
+        const t = tileAt(nx, ny), j = idx(nx, ny);
+        const c = t === T.PATH ? .4 : t === T.GRASS || t === T.SAND ? 1 : t === T.RIVER ? 6 : t === T.BUILD ? 1e9 : 1e9;
+        if (c >= 1e9) continue;
+        const ng = g[i] + c;
+        if (ng < g[j]) { g[j] = ng; from[j] = i; open.push([ng + Math.abs(nx - sx) * 0, j]); }
+      }
+    }
+    return null;
+  };
+  const lay = pts => { for (const [x, y] of pts) { const t = tileAt(x, y); if (t === T.RIVER) { under[idx(x, y)] = t; set(x, y, T.BRIDGE); } else if (t === T.GRASS || t === T.SAND) set(x, y, T.PATH); } };
+  for (let x = vx - 2; x <= vx + 19; x++) { set(x, FRONT, T.PATH); set(x, ROAD, T.PATH); }
+  const startX = vx + 9, startY = ROAD;
+  const besideWater = kind => (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tileAt(x + dx, y + dy) === kind);
+  const routes = {};
+  for (const [name, kind] of [["pond", T.POND], ["lake", T.LAKE], ["ocean", T.OCEAN], ["river", T.RIVER]]) {
+    const pts = path(startX, startY, besideWater(kind)); if (!pts) return null;
+    lay(pts); routes[name] = pts[pts.length - 1];
+  }
+  // ---- docks: out into the lake and the home pond; a long pier into the ocean with the Cloud Ferry at its end
+  const dockOut = (end, kind, n) => {
+    const [ex, ey] = end, dir = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => tileAt(ex + dx, ey + dy) === kind);
+    if (!dir) return null; let last = null;
+    for (let k = 1; k <= n; k++) { const x = ex + dir[0] * k, y = ey + dir[1] * k; if (tileAt(x, y) !== kind) break; under[idx(x, y)] = kind; set(x, y, T.DOCK); last = [x, y]; }
+    return last && { last, dir };
+  };
+  dockOut(routes.lake, T.LAKE, 5); dockOut(routes.pond, T.POND, 2);
+  const pier = dockOut(routes.ocean, T.OCEAN, 8); if (!pier) return null;
+  const [lx2, ly2] = pier.last, horiz = pier.dir[0] !== 0;
+  const fx = horiz ? lx2 - pier.dir[0] : lx2 + 1, fy = horiz ? ly2 + 1 : ly2 - pier.dir[1];
+  BUILDINGS.push({ id: "ferry", name: "Cloud Ferry", x: horiz ? Math.min(fx, fx + pier.dir[0]) : fx, y: horiz ? fy : Math.min(fy, fy + pier.dir[1]), w: horiz ? 2 : 1, h: horiz ? 1 : 2,
+                   sign: "⛴️", act: "⛴️<br>Ferry", kind: "boat", anyside: true, action: "ferry", roof: "#e8f0ff" });
+  W1_PIER = { x: lx2 + .5, y: ly2 + .5 };
+  BUILDINGS.forEach((b, bi) => { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { if (isWater(tileAt(x, y))) under[idx(x, y)] = tileAt(x, y); set(x, y, T.BUILD); buildAt[idx(x, y)] = bi; } });
+  // ---- trees, rocks and flowers; shores, roads and the village stay open so every bank is fishable
+  const nearWater = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (waterAtW(x + dx, y + dy) || [T.DOCK, T.BRIDGE].includes(tileAt(x + dx, y + dy))) return true; return false; };
+  const nearRoad = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.PATH || t === T.BUILD) return true; } return false; };
+  const woodsCut = .5 + rnd() * .14;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    if (tileAt(x, y) !== T.GRASS) continue;
+    if (x === 0 || y === 0 || x === MW - 1 || y === MH - 1) { set(x, y, T.TREE); continue; }
+    if (nearWater(x, y) || nearRoad(x, y)) continue;
+    if (x >= vx - 3 && x <= vx + 20 && y >= vy - 3 && y <= vy + 8) continue;
+    const n = vnoise(x * .18, y * .18, S + 11);
+    if (n > woodsCut && hash2(x, y, S + 12) < .62) set(x, y, T.TREE);
+    else if (hash2(x, y, S + 13) < .012) set(x, y, T.ROCK);
+    else if (hash2(x, y, S + 14) < .05) set(x, y, T.FLOWER);
+  }
+  computeDepth();
+  // ---- checks: every water reachable on foot, deep enough for its deep-water fish
+  const reach = new Uint8Array(MW * MH), q = [idx(startX, startY)]; reach[q[0]] = 1;
+  for (let h = 0; h < q.length; h++) { const i = q[h], x = i % MW, y = (i / MW) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = idx(nx, ny); if (!reach[j] && walkTile(tiles[j])) { reach[j] = 1; q.push(j); } } }
+  const fishable = kind => { for (let i = 0; i < tiles.length; i++) if (reach[i]) { const x = i % MW, y = (i / MW) | 0; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tileAt(x + dx, y + dy) === kind)) return true; } return false; };
+  const maxDepth = kind => { let m = 0; for (let i = 0; i < tiles.length; i++) if (tiles[i] === kind) m = Math.max(m, depth[i]); return m; };
+  if (![T.POND, T.RIVER, T.LAKE, T.OCEAN].every(fishable)) return null;
+  if (maxDepth(T.LAKE) < 3 || maxDepth(T.OCEAN) < 3 || maxDepth(T.RIVER) < 2) return null;
+  // ---- where things are, for spawning and the map labels
+  const spawns = [0, 1, 2, 3].map(k => ({ x: vx + 3.5 + k * 2, y: ROAD + .5 }));
+  const centre = kind => { let sx = 0, sy = 0, n = 0; for (let i = 0; i < tiles.length; i++) if (tiles[i] === kind) { sx += i % MW; sy += (i / MW) | 0; n++; } return n ? [sx / n, sy / n] : [0, 0]; };
+  const riverMid = (() => { const r = []; for (let i = 0; i < tiles.length; i++) if (tiles[i] === T.RIVER) r.push(i); const i = r[Math.floor(r.length / 2)] || 0; return [i % MW, (i / MW) | 0]; })();
+  const labels = [["Pond", p1[0], p1[1]], ...(p2 ? [["Pond", p2[0], p2[1]]] : []), ["River", ...riverMid], ["Lake", lcx, lcy], ["Ocean", ...coastP(37, Math.floor(band / 2))], ["Beach", ...coastP(lakeA, band + 1)]];
+  return { spawns, labels };
+}
+function loadWorld(seed) {
+  if (seed === WORLD_SEED && MAPS.has("w1")) return;
+  const prev = CUR && CUR.key !== "w1" ? CUR : null;
+  let info = null, s = seed;
+  if (seed !== "classic") for (let tries = 0; tries < 40 && !info; tries++) { freshW1Arrays(); info = genProc((Number(s) || 1) + tries * 7919); }
+  if (!info) { freshW1Arrays(); genWorld(); info = CLASSIC; }
+  WORLD_SEED = seed;
+  info.spawns.forEach((sp, i) => { SPAWNS[i] = sp; });
+  W1_LABELS = info.labels;
+  const m = { key: "w1", name: "World 1", kind: "w1", W: MW, H: MH, tiles, under, depth, buildAt, buildings: BUILDINGS, oob: T.TREE, portals: [] };
+  MAPS.set("w1", m); CUR = m; mapKey = "w1";
+  if (typeof bgCache !== "undefined") for (const k of [...bgCache.keys()]) if (k.startsWith("w1|")) bgCache.delete(k);
+  if (typeof hotCache !== "undefined") hotCache.clear();
+  if (typeof mmKey !== "undefined") mmKey = "";
+  if (typeof BM !== "undefined") BM.base = null;
+  if (prev) useMap(prev);
+}
+const newWorldSeed = () => window.FWF_SEED ?? 1 + Math.floor(Math.random() * 2e9);   // FWF_SEED: tests can pin a world
+
 // ================= Debug lobby (code EEEEE): playtest tools =================
 const DEBUG_CODE = "EEEEE";
 const isDebug = () => net.code === DEBUG_CODE;
@@ -1374,6 +1534,11 @@ function debugAction(seat, a) {
       for (const f of list) if (!state.dex[f.id]) state.dex[f.id] = { n: 1, best: f.kg[1], by: p.name };
       if (W1_REQUIRED.every(f => state.dex[f.id])) state.unlocked = { ...(state.unlocked || {}), cloud: true };
       return say(`Journal: ${list.length} fish added`);
+    }
+    case "reroll": {
+      loadWorld(newWorldSeed()); state.worldSeed = WORLD_SEED;
+      state.players.forEach((q, i) => { if (q.map === "w1") moveTo(q, "w1", SPAWNS[i].x, SPAWNS[i].y); });
+      return say("New World 1 generated");
     }
     case "cleardex": state.dex = {}; state.unlocked = {}; return say("Journal cleared and Cloud Island locked");
     case "unlock": state.unlocked = { ...(state.unlocked || {}), cloud: true }; return say("Cloud Island unlocked");
@@ -1899,7 +2064,9 @@ function hostLobby(code, debugJoin) {
   peer.on("open", () => {
     net.isHost = true; net.seat = 0; net.code = code;
     const saved = readJSON(saveKey(code));
-    state = saved && saved.players ? migrate(saved) : Object.assign(newGame(), { maxPlayers: pickedSize() });
+    loadWorld(saved && saved.players ? (saved.worldSeed ?? "classic") : newWorldSeed());
+    state = saved && saved.players ? migrate(saved) : Object.assign(newGame(), { maxPlayers: pickedSize(), worldSeed: WORLD_SEED });
+    if (state.worldSeed == null) state.worldSeed = "classic";
     if (!saved && state.maxPlayers === 2) addLog("A cosy lobby for two anglers.", true);
     state.players.forEach(p => p.line = null);
     state.tz = new Date().getTimezoneOffset();
@@ -1937,6 +2104,7 @@ function onHostData(c, msg) {
     // a friend who's already a sharper fisher than this save (the host lost theirs?) brings the team's progress back
     if (state.players.length === 1 && msg.saved && msg.saved.players && progress(msg.saved) > progress(state)) {
       const me = state.players[0];
+      loadWorld(msg.saved.worldSeed ?? "classic");
       state = migrate(msg.saved);
       Object.assign(state.players[0], { x: me.x, y: me.y, dir: me.dir, cid: CID, online: true });
       state.players.forEach((p, i) => { p.online = i === 0; p.line = null; });
@@ -2021,6 +2189,7 @@ function joinLobby(code, triedHost) {
         const first = !net.code;
         if (typeof msg.now === "number") clockSkew = Date.now() - msg.now;
         const mine = state && state.players[net.seat];
+        loadWorld(msg.state.worldSeed ?? "classic");
         state = msg.state; state.players.forEach(p => { p.items = p.items || []; p.bait = p.bait || {}; });
         if (typeof msg.you === "number") net.seat = msg.you;
         // keep our own live position (the host's copy can be a step behind) unless the host moved us on purpose
@@ -2903,7 +3072,7 @@ function drawBigMap(now) {
   };
   // place names
   const fs = clamp(s * 1.6, 11, 22);
-  if (mapKey === "w1") [["Pond", 13.5, 42], ["Pond", 15, 11], ["River", 33.5, 12], ["Lake", 40, 47.5], ["Ocean", 69, 20], ["Beach", 61.5, 46]].forEach(([n, x, y]) => lab(n, tx(x), ty(y), "#e8f6ff", fs));
+  if (mapKey === "w1") W1_LABELS.forEach(([n, x, y]) => lab(n, tx(x), ty(y), "#e8f6ff", fs));
   for (const d of CUR.portals) lab(portalInfo(d) || "🌀", tx(d.x + .5), ty(d.y + .5), "#f0e0ff", clamp(s * .9, 10, 16));
   for (const b of BUILDINGS) lab(s < 18 ? b.sign : `${b.sign} ${b.name}`, tx(b.x + b.w / 2), ty(b.y - .8), "#ffe8a0", s < 18 ? clamp(s * 1.6, 13, 20) : clamp(s * 1.1, 10, 16));   // icons only until there's room for names
   // bubbling spots
@@ -3331,7 +3500,7 @@ function renderDebug(title, note, body) {
   note.innerHTML = `Playtest tools — only in lobby <b>${DEBUG_CODE}</b>. You're in <b>${CUR.kind === "w1" ? "World 1" : CUR.name}</b>${state.sky ? ` · sky floor ${state.sky.floor} (${state.sky.got}/${state.sky.goal}${state.sky.cleared ? ", cleared" : ""})` : ""}.`;
   body.innerHTML = `
     <div class="opt-title">Travel</div>
-    <div class="setrow">${B("🌳 World 1", { what: "go", to: "w1" })}${B("☁️ Cloud Island", { what: "go", to: "cloud" })}
+    <div class="setrow">${B("🌳 World 1", { what: "go", to: "w1" })}${B("🌍 New World 1", { what: "reroll" })}${B("☁️ Cloud Island", { what: "go", to: "cloud" })}
       <span style="display:flex;gap:6px;align-items:center">${B("⛵ Sky floor", { what: "go", to: "sky" })}<input id="dbg-floor" class="field" type="number" min="1" max="99" value="${state.sky ? state.sky.floor : 1}" style="width:64px;padding:6px"></span>
       ${B("🌊 Pool room", { what: "go", to: "pool" })}${B("✅ Clear floor", { what: "clear" })}${B("⭐ Catch special", { what: "special" })}</div>
     <div class="opt-title">Gold</div>

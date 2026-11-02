@@ -35,7 +35,15 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Your angler and pet:** the same character creator as Mine with friends, plus a **dog or cat** that follows you and sits between the joystick and the Cast button on phones.
   - 🐶 **Dog:** barks when a fish bites and gives you longer to hook it.
   - 🐱 **Cat:** your catches come in a bit heavier.
-- **One big map** (75 × 75 tiles) drawn on the **Grass BG** texture, with brick paths, a village, two ponds, a river, a lake with a dock and an ocean pier.
+- **A new World 1 for every room** (75 × 75 tiles), drawn on the **Grass BG** texture. When you create a lobby it picks a random seed and saves it with the lobby. Guests get the seed from the host and build the same world on their own device, and reopening the lobby always gives the same world. Each world has:
+  - the ocean along one random side, with a beach and a long pier where the ⛴️ Cloud Ferry waits;
+  - a lake, sometimes with an island, and a dock;
+  - a river that winds into the lake and out to the sea;
+  - one or two ponds;
+  - a village in an open clearing;
+  - brick roads to every water, with bridges where they cross the river.
+
+  Every world is checked before you play: all four waters must be reachable on foot and deep enough for their deep-water fish. Lobbies made before this keep the original hand-made map.
 - **Fishing:**
   1. Hold **Cast** to charge your throw, then let go.
   2. Tap when the bobber dips to hook the fish.
@@ -126,6 +134,7 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 Type **EEEEE** in the join box and press Join. It opens the debug lobby, or joins it if a friend already has it open. Everyone in that lobby gets a 🛠️ **Debug** menu (also in ⚙️ Settings) to:
 - **Fish and gold:** give gold, add any fish or junk to your cooler, and fill or clear the journal.
 - **Gear and items:** set any rod or fishing level, add bait, Hourglass Charms and the biggest cooler, and unlock Cloud Island.
+- **🌍 New World 1:** generate a fresh World 1 for the debug lobby.
 - **Travel:** go to World 1, Cloud Island, any Sky Island floor or straight to the pool room. You can also clear the floor or catch its special fish.
 - **Time:** switch between day, night and the real clock.
 
