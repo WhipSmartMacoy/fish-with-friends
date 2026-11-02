@@ -287,6 +287,10 @@
   /* the pet sits on the chat bar, at the same end as the action buttons */
   html.immersive .chat .pet-dock { display: grid !important; flex: none; order: 3; margin: -22px -2px 0 0 !important; align-self: flex-end; pointer-events: none; }
   html.immersive.act-left .chat .pet-dock { order: -1; margin: -22px 0 0 -2px !important; }
+  /* left layout: the whole chat bar mirrors — pet, then the input and Send, with the latest message on the far side */
+  html.immersive .chat-log { order: 1; } html.immersive .chat-form { order: 2; }
+  html.immersive.act-left .chat-form { order: 0; }
+  html.immersive.act-left .chat-log { order: 1; text-align: right; }
   html.immersive .chat .pet-dock.empty { display: none !important; }
   html.immersive .chat #pet-canvas { width: 60px; height: 60px; }
   html.immersive.act-left .chat #pet-canvas { transform: scaleX(-1); }
@@ -842,7 +846,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1530";
+const BUILD = "2026.11.02-1545";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
