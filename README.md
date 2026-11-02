@@ -26,14 +26,28 @@ A co-op fishing game for two players, each on their own device. It's the sister 
   1. Hold **Cast** to charge your throw, then let go.
   2. Tap when the bobber dips to hook the fish.
   3. Land it on the Dredge-style dial: tap in the green and avoid the red.
-- **27 fish** across the pond, river, lake and sea. Some only bite at night or in deep water. You can also reel in junk and treasure chests.
-- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (9 common, 6 uncommon, 4 rare, 4 epic, 4 legendary).
+- **33 fish, and every water has its own.** No fish is shared between the Pond, River, Lake and Ocean:
+
+  | Water | Fish | ☀️ Day only | 🌙 Night only | 🕐 Any time |
+  |---|---|---|---|---|
+  | 🪷 Pond | 8 | Sunfish, Bluegill, ◆◆◆ Koi, ★ Golden Koi | ◆ Bullhead, ◆◆ Ghost Carp | Minnow, ◆ Carp |
+  | 🏞️ River | 8 | Rainbow Trout, ★ River King | Shad, ◆ Burbot, ◆◆ Eel | Chub, ◆ Salmon, ◆◆◆ Sturgeon (deep channel) |
+  | ⛵ Lake | 8 | Crappie, ◆◆ Pike, ◆◆◆ Muskie (deep) | ◆ Catfish, ◆ Walleye, ★ Old Whiskers (deep) | Perch, Largemouth Bass |
+  | 🌊 Ocean | 9 | Mackerel, ◆ Red Snapper, ◆◆◆ Swordfish (deep) | Lanternfish, ◆ Squid, ◆◆ Octopus, ★ Moonfish (deep) | Sardine, ◆◆ Bluefin Tuna (deep) |
+
+  You can also reel in junk (boots, cans, seaweed) and treasure chests. The action button tells you which water you're facing.
+- **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (10 common, 8 uncommon, 7 rare, 4 epic, 4 legendary).
   - The reel bar shows a fish's rarity as soon as you hook it.
   - Catches, the cooler and the journal are colour-coded by rarity.
   - Better rods, a Shiny Lure, Glow Bait at night and bubbling hot spots all make rarer fish more likely.
 - **Fishing level** goes from 1 to 10 and unlocks rarer fish.
-- **Bubbling hot spots** move every few minutes and make fish bite faster and rarer fish more likely.
-- **Day and night:** one in-game day lasts 12 real minutes.
+- **Bubbling hot spots** move every half hour and make fish bite faster and rarer fish more likely.
+- **Real time:** the world runs on the real 24-hour clock, using the host's time zone so both players share the same time.
+  - 12 fish bite only by day (6 am – 8 pm), 12 only at night (8 pm – 6 am) and 9 at any time. The table above shows which.
+  - Everything else bites any time.
+  - The sky fades at dusk (6:30–8:30 pm) and lightens at dawn (5–7 am). Windows light up at night, and the game announces sunrise and nightfall.
+  - The journal marks every fish as day only, night only or any time, and says whether it's biting right now.
+  - Bubbling hot spots move every half hour.
 - **Shops:**
   - 🐟 **Fish Market:** sell your catch (bigger fish are worth more) into the shared **team stash**.
   - 🎣 **Tackle Shop:** rods, bait (Worms, Shiny Lure, Glow Bait) and bigger coolers.

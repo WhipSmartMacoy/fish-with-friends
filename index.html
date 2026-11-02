@@ -240,7 +240,7 @@
 <body>
 <header>
   <h1>🎣 Fish with friends</h1>
-  <p>Team up with a friend: cast a line at ponds, rivers, the lake and the sea — and fill the journal together.</p>
+  <p>Team up with a friend: cast a line at the pond, river, lake and ocean — and fill the journal together.</p>
 </header>
 
 <main class="screens">
@@ -767,7 +767,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1300";
+const BUILD = "2026.11.02-1345";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -835,7 +835,8 @@ const DIRS = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 const TS = 48;                 // world units per tile (the character art is 48 × 60 units)
 const MW = 75, MH = 75, CH = 15;
 const T = { GRASS: 0, SAND: 1, PATH: 2, DOCK: 3, BRIDGE: 4, TREE: 5, BUILD: 6, FLOWER: 7, ROCK: 8, POND: 10, RIVER: 11, LAKE: 12, OCEAN: 13 };
-const WATER_NAMES = { 10: "Pond", 11: "River", 12: "Lake", 13: "Sea" };
+const WATER_NAMES = { 10: "Pond", 11: "River", 12: "Lake", 13: "Ocean" };
+const WATER_LABEL = { pond: "Pond", river: "River", lake: "Lake", sea: "Ocean" };
 const WATER_KEYS = { 10: "pond", 11: "river", 12: "lake", 13: "sea" };
 const tiles = new Uint8Array(MW * MH);
 const under = new Uint8Array(MW * MH);   // water beneath docks and bridges
@@ -951,7 +952,7 @@ function genWorld() {
 genWorld();
 const depthAt = (x, y) => inMap(x, y) ? depth[idx(x, y)] : 0;
 // Ripply "hot spots" move every few minutes; both players see the same ones (they're picked from the clock).
-const HOT_MS = 3 * 60 * 1000;
+const HOT_MS = 30 * 60 * 1000;          // bubbling spots move on the hour and half hour
 const hotCache = new Map();
 function hotSpots(t) {
   const win = Math.floor(t / HOT_MS);
@@ -969,14 +970,18 @@ function hotSpots(t) {
 const nearHot = (x, y, t) => hotSpots(t).some(h => Math.abs(h.x - x) <= 1 && Math.abs(h.y - y) <= 1);
 
 // ================= Time of day =================
-// One in-game day lasts 12 real minutes. Both devices read the host's clock.
-const DAY_MS = 12 * 60 * 1000;
+// Real time: the world follows the host's actual clock (24 hours). Guests correct for clock drift.
+const DAY_MS = 24 * 60 * 60 * 1000;     // a real day
 let clockSkew = 0;   // guest: our clock minus the host's
 const hostNow = () => Date.now() - clockSkew;
-const hourAt = t => (6 + (t % DAY_MS) / DAY_MS * 24) % 24;
-const isNight = t => { const h = hourAt(t); return h >= 20 || h < 5; };
+// Real time of day, in the HOST's time zone, so both anglers share one clock (and the same fish are biting).
+const tzOffset = () => (state && typeof state.tz === "number") ? state.tz : new Date().getTimezoneOffset();
+const hourAt = t => { const local = t - tzOffset() * 60000; return ((local % DAY_MS) + DAY_MS) % DAY_MS / 3600000; };
+const NIGHT_FROM = 20, DAY_FROM = 6;     // night 8 pm – 6 am, day 6 am – 8 pm
+const isNight = t => { const h = hourAt(t); return h >= NIGHT_FROM || h < DAY_FROM; };
+function periodOf(t) { const h = hourAt(t); return h >= 5 && h < 7 ? "Dawn" : h >= 7 && h < 18 ? "Day" : h >= 18 && h < NIGHT_FROM ? "Dusk" : "Night"; }
 function clockText(t) {
-  const h = hourAt(t), hh = Math.floor(h), mm = Math.floor((h - hh) * 6) * 10;
+  const h = hourAt(t), hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
   const icons = ["🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚"];
   return `${isNight(t) ? "🌙" : icons[hh % 12]} ${hh}:${String(mm).padStart(2, "0")}`;
 }
@@ -984,39 +989,50 @@ function clockText(t) {
 // ================= Fish =================
 // w = how common · d = fight difficulty (1–10) · lvl = fishing level needed · kg = weight range · time: any/day/night
 // shape: std / long / flat (pixel art) or an emoji · col = [body, belly, fin, stripe]
+// Every body of water has its own fish — nothing is shared between the Pond, River, Lake and Sea.
+// rar: 0 Common · 1 Uncommon · 2 Rare · 3 Epic · 4 Legendary   ·  time: "day" (6 am – 8 pm) / "night" (8 pm – 6 am) / any
+// d = fight difficulty (1–10) · lvl = fishing level needed · kg = weight range · shape: std / long / flat or an emoji · col = [body, belly, fin, stripe]
+const RAR_WEIGHT = [30, 15, 8, 4, 1];
 const FISH = [
-  // Pond
-  { id: "minnow",   name: "Minnow",        water: ["pond", "river"], lvl: 1, w: 40, d: 1, price: 4,   kg: [.01, .06], shape: "std",  col: ["#a8b8a0", "#e8ecd8", "#7a8a70", "#8a9a80"] },
-  { id: "sunfish",  name: "Sunfish",       water: ["pond"],          lvl: 1, w: 30, d: 2, price: 10,  kg: [.1, .4],   shape: "flat", col: ["#e8a040", "#ffe070", "#c06a28", "#4a8a8a"] },
-  { id: "bluegill", name: "Bluegill",      water: ["pond", "lake"],  lvl: 2, w: 24, d: 2, price: 14,  kg: [.1, .6],   shape: "flat", col: ["#5a7ab0", "#f0c070", "#3a4a80", "#2a3a6a"] },
-  { id: "carp",     name: "Carp",          water: ["pond", "lake"],  lvl: 3, w: 16, d: 4, price: 28,  kg: [1, 8],     shape: "std",  col: ["#b08a40", "#e8d090", "#8a6a2a", "#9a7a38"] },
-  { id: "koi",      name: "Koi",           water: ["pond"],          lvl: 5, w: 6,  d: 5, price: 90,  kg: [1, 5],     shape: "std",  col: ["#f4f0e8", "#ffffff", "#e8483e", "#e8483e"], time: "day" },
-  { id: "goldkoi",  name: "Golden Koi",    water: ["pond"],          lvl: 8, w: 1,  d: 8, price: 650, kg: [2, 6],     shape: "std",  col: ["#ffd040", "#fff0a0", "#e89a20", "#fff4c0"], legend: true },
-  // River
-  { id: "chub",     name: "Chub",          water: ["river"],         lvl: 1, w: 34, d: 2, price: 9,   kg: [.2, 1],    shape: "std",  col: ["#8a9aa0", "#dce4e0", "#c05a3a", "#6a7a80"] },
-  { id: "trout",    name: "Rainbow Trout", water: ["river", "lake"], lvl: 2, w: 26, d: 3, price: 24,  kg: [.3, 2.5],  shape: "std",  col: ["#7aa070", "#f0e0d0", "#5a7a50", "#e87a8a"] },
-  { id: "salmon",   name: "Salmon",        water: ["river", "sea"],  lvl: 4, w: 14, d: 5, price: 55,  kg: [2, 9],     shape: "std",  col: ["#c87060", "#f0d0c0", "#8a4a40", "#a85a50"] },
-  { id: "eel",      name: "Eel",           water: ["river", "pond"], lvl: 4, w: 10, d: 6, price: 48,  kg: [.5, 3],    shape: "long", col: ["#4a5a3a", "#8a9a6a", "#3a4a2a", "#5a6a4a"], time: "night" },
-  { id: "pike",     name: "Pike",          water: ["river", "lake"], lvl: 5, w: 11, d: 6, price: 70,  kg: [1, 12],    shape: "long", col: ["#5a8a4a", "#e0e8c0", "#3a6a3a", "#c0d890"] },
-  { id: "sturgeon", name: "Sturgeon",      water: ["river"],         lvl: 7, w: 4,  d: 8, price: 220, kg: [10, 60],   shape: "long", col: ["#6a6a7a", "#c8c8d0", "#4a4a5a", "#8a8a9a"], deep: true },
-  { id: "riverking",name: "River King",    water: ["river"],         lvl: 9, w: 1,  d: 9, price: 900, kg: [15, 40],   shape: "std",  col: ["#3a8ac0", "#e0f4ff", "#ffd040", "#ffd040"], legend: true },
-  // Lake
-  { id: "perch",    name: "Perch",         water: ["lake"],          lvl: 1, w: 34, d: 2, price: 11,  kg: [.1, .8],   shape: "std",  col: ["#c8b040", "#f0e8b0", "#e8603a", "#4a5a2a"] },
-  { id: "bass",     name: "Largemouth Bass", water: ["lake", "pond"],lvl: 2, w: 24, d: 4, price: 34,  kg: [.5, 4.5],  shape: "std",  col: ["#5a8a3a", "#e8e8c0", "#3a6a2a", "#2a4a1a"] },
-  { id: "catfish",  name: "Catfish",       water: ["lake", "river"], lvl: 3, w: 16, d: 5, price: 44,  kg: [1, 15],    shape: "std",  col: ["#6a6050", "#c8c0a8", "#4a4038", "#5a5040"], time: "night" },
-  { id: "walleye",  name: "Walleye",       water: ["lake"],          lvl: 4, w: 13, d: 5, price: 50,  kg: [1, 6],     shape: "long", col: ["#a89a50", "#f0f0d8", "#7a6a30", "#6a5a28"] },
-  { id: "muskie",   name: "Muskie",        water: ["lake"],          lvl: 6, w: 6,  d: 7, price: 160, kg: [5, 25],    shape: "long", col: ["#8a9a5a", "#e8e8c8", "#5a6a3a", "#4a5a2a"], deep: true },
-  { id: "whiskers", name: "Old Whiskers",  water: ["lake"],          lvl: 9, w: 1,  d: 9, price: 1000,kg: [30, 80],   shape: "std",  col: ["#3a3430", "#a89a88", "#ffd040", "#6a5a50"], legend: true, deep: true, time: "night" },
-  // Sea
-  { id: "sardine",  name: "Sardine",       water: ["sea"],           lvl: 1, w: 40, d: 1, price: 5,   kg: [.05, .2],  shape: "std",  col: ["#7a9ac0", "#e8f0f8", "#5a7aa0", "#3a5a8a"] },
-  { id: "mackerel", name: "Mackerel",      water: ["sea"],           lvl: 2, w: 28, d: 3, price: 18,  kg: [.3, 1.5],  shape: "std",  col: ["#3a8a8a", "#f0f4f0", "#2a5a6a", "#1a3a4a"] },
-  { id: "snapper",  name: "Red Snapper",   water: ["sea"],           lvl: 3, w: 20, d: 4, price: 40,  kg: [1, 8],     shape: "std",  col: ["#e05a5a", "#f8c8c0", "#b03a3a", "#f08a7a"] },
-  { id: "squid",    name: "Squid",         water: ["sea"],           lvl: 4, w: 12, d: 5, price: 45,  kg: [.5, 3],    shape: "🦑", time: "night" },
-  { id: "octopus",  name: "Octopus",       water: ["sea"],           lvl: 5, w: 7,  d: 6, price: 80,  kg: [2, 12],    shape: "🐙" },
-  { id: "tuna",     name: "Bluefin Tuna",  water: ["sea"],           lvl: 6, w: 7,  d: 7, price: 150, kg: [20, 120],  shape: "std",  col: ["#2a4a8a", "#d8e0f0", "#ffd040", "#1a2a5a"], deep: true },
-  { id: "sword",    name: "Swordfish",     water: ["sea"],           lvl: 8, w: 3,  d: 8, price: 300, kg: [40, 180],  shape: "long", col: ["#4a5a8a", "#d0d8e8", "#2a3a6a", "#3a4a7a"], deep: true },
-  { id: "moonfish", name: "Moonfish",      water: ["sea"],           lvl: 10,w: 1,  d: 10,price: 1500,kg: [40, 120],  shape: "flat", col: ["#c8d0f0", "#ffffff", "#8a9ae0", "#ffe8a0"], legend: true, time: "night", deep: true },
+  // Pond — 8 fish
+  { id: "minnow",   name: "Minnow",          water: ["pond"],  rar: 0, lvl: 1, d: 1, price: 4,    kg: [.01, .06], shape: "std",  col: ["#a8b8a0", "#e8ecd8", "#7a8a70", "#8a9a80"] },
+  { id: "sunfish",  name: "Sunfish",         water: ["pond"],  rar: 0, lvl: 1, d: 2, price: 10,   kg: [.1, .4],   shape: "flat", col: ["#e8a040", "#ffe070", "#c06a28", "#4a8a8a"], time: "day" },
+  { id: "bluegill", name: "Bluegill",        water: ["pond"],  rar: 0, lvl: 2, d: 2, price: 14,   kg: [.1, .6],   shape: "flat", col: ["#5a7ab0", "#f0c070", "#3a4a80", "#2a3a6a"], time: "day" },
+  { id: "carp",     name: "Carp",            water: ["pond"],  rar: 1, lvl: 3, d: 4, price: 28,   kg: [1, 8],     shape: "std",  col: ["#b08a40", "#e8d090", "#8a6a2a", "#9a7a38"] },
+  { id: "mudcat",   name: "Bullhead",        water: ["pond"],  rar: 1, lvl: 3, d: 4, price: 30,   kg: [.3, 2],    shape: "std",  col: ["#5a4a3a", "#b8a888", "#3a2e24", "#4a3c30"], time: "night" },
+  { id: "ghostcarp",name: "Ghost Carp",      water: ["pond"],  rar: 2, lvl: 4, d: 5, price: 85,   kg: [1, 6],     shape: "std",  col: ["#d8e4f0", "#ffffff", "#9ab0d0", "#b8c8e8"], time: "night" },
+  { id: "koi",      name: "Koi",             water: ["pond"],  rar: 3, lvl: 6, d: 6, price: 160,  kg: [1, 5],     shape: "std",  col: ["#f4f0e8", "#ffffff", "#e8483e", "#e8483e"], time: "day" },
+  { id: "goldkoi",  name: "Golden Koi",      water: ["pond"],  rar: 4, lvl: 8, d: 8, price: 650,  kg: [2, 6],     shape: "std",  col: ["#ffd040", "#fff0a0", "#e89a20", "#fff4c0"], time: "day", legend: true },
+  // River — 8 fish
+  { id: "chub",     name: "Chub",            water: ["river"], rar: 0, lvl: 1, d: 2, price: 9,    kg: [.2, 1],    shape: "std",  col: ["#8a9aa0", "#dce4e0", "#c05a3a", "#6a7a80"] },
+  { id: "trout",    name: "Rainbow Trout",   water: ["river"], rar: 0, lvl: 1, d: 3, price: 18,   kg: [.3, 2.5],  shape: "std",  col: ["#7aa070", "#f0e0d0", "#5a7a50", "#e87a8a"], time: "day" },
+  { id: "shad",     name: "Shad",            water: ["river"], rar: 0, lvl: 2, d: 2, price: 12,   kg: [.3, 1.5],  shape: "std",  col: ["#9ab0b8", "#eef4f4", "#6a8088", "#5a6a8a"], time: "night" },
+  { id: "salmon",   name: "Salmon",          water: ["river"], rar: 1, lvl: 3, d: 5, price: 50,   kg: [2, 9],     shape: "std",  col: ["#c87060", "#f0d0c0", "#8a4a40", "#a85a50"] },
+  { id: "burbot",   name: "Burbot",          water: ["river"], rar: 1, lvl: 3, d: 5, price: 46,   kg: [.5, 4],    shape: "long", col: ["#7a6a3a", "#d8c890", "#5a4a24", "#4a3a1a"], time: "night" },
+  { id: "eel",      name: "Eel",             water: ["river"], rar: 2, lvl: 5, d: 6, price: 80,   kg: [.5, 3],    shape: "long", col: ["#4a5a3a", "#8a9a6a", "#3a4a2a", "#5a6a4a"], time: "night" },
+  { id: "sturgeon", name: "Sturgeon",        water: ["river"], rar: 3, lvl: 7, d: 8, price: 230,  kg: [10, 60],   shape: "long", col: ["#6a6a7a", "#c8c8d0", "#4a4a5a", "#8a8a9a"], deep: true },
+  { id: "riverking",name: "River King",      water: ["river"], rar: 4, lvl: 9, d: 9, price: 900,  kg: [15, 40],   shape: "std",  col: ["#3a8ac0", "#e0f4ff", "#ffd040", "#ffd040"], time: "day", legend: true },
+  // Lake — 8 fish
+  { id: "perch",    name: "Perch",           water: ["lake"],  rar: 0, lvl: 1, d: 2, price: 11,   kg: [.1, .8],   shape: "std",  col: ["#c8b040", "#f0e8b0", "#e8603a", "#4a5a2a"] },
+  { id: "bass",     name: "Largemouth Bass", water: ["lake"],  rar: 0, lvl: 1, d: 3, price: 20,   kg: [.5, 4.5],  shape: "std",  col: ["#5a8a3a", "#e8e8c0", "#3a6a2a", "#2a4a1a"] },
+  { id: "crappie",  name: "Crappie",         water: ["lake"],  rar: 0, lvl: 2, d: 2, price: 13,   kg: [.2, 1.2],  shape: "flat", col: ["#b8c0a0", "#f4f4e0", "#6a7a5a", "#3a4a30"], time: "day" },
+  { id: "catfish",  name: "Catfish",         water: ["lake"],  rar: 1, lvl: 3, d: 5, price: 44,   kg: [1, 15],    shape: "std",  col: ["#6a6050", "#c8c0a8", "#4a4038", "#5a5040"], time: "night" },
+  { id: "walleye",  name: "Walleye",         water: ["lake"],  rar: 1, lvl: 3, d: 5, price: 48,   kg: [1, 6],     shape: "long", col: ["#a89a50", "#f0f0d8", "#7a6a30", "#6a5a28"], time: "night" },
+  { id: "pike",     name: "Pike",            water: ["lake"],  rar: 2, lvl: 5, d: 6, price: 85,   kg: [1, 12],    shape: "long", col: ["#5a8a4a", "#e0e8c0", "#3a6a3a", "#c0d890"], time: "day" },
+  { id: "muskie",   name: "Muskie",          water: ["lake"],  rar: 3, lvl: 7, d: 7, price: 200,  kg: [5, 25],    shape: "long", col: ["#8a9a5a", "#e8e8c8", "#5a6a3a", "#4a5a2a"], time: "day", deep: true },
+  { id: "whiskers", name: "Old Whiskers",    water: ["lake"],  rar: 4, lvl: 9, d: 9, price: 1000, kg: [30, 80],   shape: "std",  col: ["#3a3430", "#a89a88", "#ffd040", "#6a5a50"], time: "night", deep: true, legend: true },
+  // Sea — 9 fish
+  { id: "sardine",  name: "Sardine",         water: ["sea"],   rar: 0, lvl: 1, d: 1, price: 5,    kg: [.05, .2],  shape: "std",  col: ["#7a9ac0", "#e8f0f8", "#5a7aa0", "#3a5a8a"] },
+  { id: "mackerel", name: "Mackerel",        water: ["sea"],   rar: 0, lvl: 1, d: 3, price: 16,   kg: [.3, 1.5],  shape: "std",  col: ["#3a8a8a", "#f0f4f0", "#2a5a6a", "#1a3a4a"], time: "day" },
+  { id: "lantern",  name: "Lanternfish",     water: ["sea"],   rar: 0, lvl: 2, d: 2, price: 14,   kg: [.05, .3],  shape: "std",  col: ["#2a3a5a", "#5a7aaa", "#1a2a4a", "#7affe0"], time: "night" },
+  { id: "snapper",  name: "Red Snapper",     water: ["sea"],   rar: 1, lvl: 3, d: 4, price: 40,   kg: [1, 8],     shape: "std",  col: ["#e05a5a", "#f8c8c0", "#b03a3a", "#f08a7a"], time: "day" },
+  { id: "squid",    name: "Squid",           water: ["sea"],   rar: 1, lvl: 3, d: 5, price: 45,   kg: [.5, 3],    shape: "🦑", time: "night" },
+  { id: "octopus",  name: "Octopus",         water: ["sea"],   rar: 2, lvl: 5, d: 6, price: 90,   kg: [2, 12],    shape: "🐙", time: "night" },
+  { id: "tuna",     name: "Bluefin Tuna",    water: ["sea"],   rar: 2, lvl: 5, d: 7, price: 120,  kg: [20, 120],  shape: "std",  col: ["#2a4a8a", "#d8e0f0", "#ffd040", "#1a2a5a"], deep: true },
+  { id: "sword",    name: "Swordfish",       water: ["sea"],   rar: 3, lvl: 7, d: 8, price: 300,  kg: [40, 180],  shape: "long", col: ["#4a5a8a", "#d0d8e8", "#2a3a6a", "#3a4a7a"], time: "day", deep: true },
+  { id: "moonfish", name: "Moonfish",        water: ["sea"],   rar: 4, lvl: 10,d: 10,price: 1500, kg: [40, 120],  shape: "flat", col: ["#c8d0f0", "#ffffff", "#8a9ae0", "#ffe8a0"], time: "night", deep: true, legend: true },
 ];
+for (const f of FISH) f.w = RAR_WEIGHT[f.rar];
 const JUNK = [
   { id: "boot",    name: "Old Boot",       w: 2.5, price: 1, kg: [.4, 1], shape: "👢", junk: true },
   { id: "can",     name: "Tin Can",        w: 2.5, price: 1, kg: [.05, .2], shape: "🥫", junk: true },
@@ -1032,7 +1048,7 @@ const RARITY = [
   { name: "Epic",      col: "#c88aff", gem: "◆◆◆" },
   { name: "Legendary", col: "#ffb030", gem: "★" },
 ];
-for (const f of FISH) f.rarity = f.legend ? 4 : f.w >= 24 ? 0 : f.w >= 12 ? 1 : f.w >= 7 ? 2 : 3;
+for (const f of FISH) f.rarity = f.rar;
 for (const f of JUNK) f.rarity = f.treasure ? 3 : 0;
 const rarityOf = id => RARITY[(CATCH[id] || {}).rarity || 0];
 // Eight rod tiers, each with a rarity like the fish. Power drives luck (rarer bites, less junk, quicker bites)
@@ -1129,7 +1145,8 @@ function castRay(p, power) {
 }
 
 function rollCatch(p, tx, ty, now) {
-  const kind = WATER_KEYS[tileAt(tx, ty)], deep = depthAt(tx, ty) >= 3, night = isNight(now), lvl = levelOf(p.xp);
+  const kind = WATER_KEYS[tileAt(tx, ty)], deep = depthAt(tx, ty) >= (kind === "river" ? 2 : 3),   // the river's middle channel counts as deep
+    night = isNight(now), lvl = levelOf(p.xp);
   const bait = p.useBait && p.bait[p.useBait] > 0 ? p.useBait : null;
   const hot = nearHot(tx, ty, now), rod = RODS[p.rod];
   let rare = 1 + rod.power * .15 + (hot ? .6 : 0) + (bait === "lure" ? 1 : 0) + (bait === "glow" && (night || deep) ? 1.2 : 0);
@@ -1319,6 +1336,7 @@ function hostLobby(code) {
     const saved = readJSON(saveKey(code));
     state = saved && saved.players ? migrate(saved) : newGame();
     state.players.forEach(p => p.line = null);
+    state.tz = new Date().getTimezoneOffset();
     state.players[0].name = name; state.players[0].look = myLook;
     writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), name, lastCode: code });
     recordRecent(code, "host");
@@ -1998,7 +2016,7 @@ function draw(now) {
     ctx.globalAlpha = 1 - t * t; label(f.text, P.x, P.y - 20 - t * 40, f.color || "#fff", 13); ctx.globalAlpha = 1;
   }
   // night: darken, with a warm glow around you
-  const h = hourAt(hn), dark = h >= 21 || h < 4 ? .68 : h >= 18 ? (h - 18) / 3 * .68 : h < 6 ? (6 - h) / 2 * .68 : 0;
+  const h = hourAt(hn), dark = h >= 20.5 || h < 5 ? .68 : h >= 18.5 ? (h - 18.5) / 2 * .68 : h < 7 ? (7 - h) / 2 * .68 : 0;
   if (dark > 0) {
     ctx.save(); ctx.globalCompositeOperation = "multiply";
     const F = feet(net.seat), gr = ctx.createRadialGradient(F.x, F.y - 30, 40, F.x, F.y - 30, 230);
@@ -2095,7 +2113,8 @@ function drawReel(now, sw, sh) {
   // rarity title
   ctx.font = `bold ${Math.round(clamp(rad * .13, 12, 17))}px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.lineWidth = 4; ctx.strokeStyle = "#08203a";
-  const title = f.rarity ? `${rr.gem} ${rr.name}` : "Common";
+  const L0 = state.players[net.seat].line, wname = L0 ? WATER_NAMES[tileAt(L0.x, L0.y)] || "" : "";
+  const title = `${wname ? wname + " · " : ""}${f.rarity ? `${rr.gem} ${rr.name}` : "Common"}`;
   ctx.strokeText(title, cx, cy - rad - ringW - 10); ctx.fillStyle = rr.col; ctx.fillText(title, cx, cy - rad - ringW - 10);
   // line strain
   const bw = rad * 1.5, bx = cx - bw / 2, by = cy + rad + ringW + 8;
@@ -2199,9 +2218,16 @@ function tickLocal(dt, now) {
   const tEl = document.getElementById("toast"), wantTop = fishing.phase === "reel" || fishing.phase === "charge";
   if (tEl.classList.contains("top") !== wantTop) tEl.classList.toggle("top", wantTop);
   updateActLabel(me, hn);
-  if (now - lastHud > 1000) { lastHud = now; document.getElementById("hud-time").textContent = clockText(hn); }
+  if (now - lastHud > 1000) {
+    lastHud = now;
+    const el = document.getElementById("hud-time"); el.textContent = `${clockText(hn)} ${periodOf(hn)}`;
+    el.title = "Real time (the host's clock). Night fish bite 8 pm – 6 am, day fish 6 am – 8 pm.";
+    const night = isNight(hn);
+    if (lastNight !== null && night !== lastNight) toast(night ? "🌙 Night has fallen — night fish are biting!" : "☀️ The sun is up — day fish are biting!", "ok", 6000);
+    lastNight = night;
+  }
 }
-let lastHud = 0;
+let lastHud = 0, lastNight = null;
 
 // ---- The Dredge-style dial: a needle sweeps round the ring. Tap while it's in a green catch zone; stay off the red snags.
 // Rarer fish: faster needle, smaller green, more (and drifting) red, and the needle can swing back the other way.
@@ -2310,6 +2336,7 @@ function updateActLabel(me, hn) {
   } else {
     const f = facing(me);
     if (f && f.kind === "building") label = f.b.act;
+    else if (f && f.kind === "water") label = `🎣<br><small style="font-size:.62em">${WATER_NAMES[tileAt(f.x, f.y)] || ""}</small>`;
     else if (!f) label = "✋<br>Use";
   }
   const key = label + hot;
@@ -2428,7 +2455,7 @@ function renderHud() {
   document.getElementById("hud-cooler").textContent = `${me.items.length}/${COOLERS[me.cooler].size}`;
   const bait = me.useBait !== "none" && BAITS[me.useBait] && me.bait[me.useBait] > 0 ? `${BAITS[me.useBait].icon} ×${me.bait[me.useBait]}` : "🪝 no bait";
   document.getElementById("hud-bait").textContent = bait;
-  document.getElementById("hud-time").textContent = clockText(hostNow());
+  document.getElementById("hud-time").textContent = `${clockText(hostNow())} ${periodOf(hostNow())}`;
 }
 function renderSide() {
   if (!state) return;
@@ -2497,21 +2524,23 @@ function renderMenu() {
       h += row(fishIcon(it.id), `${f.name} ${f.junk ? "" : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
         selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`, f.junk ? "" : rr.col);
     });
-    if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! Ponds are easy, the sea and deep water hold the big ones.</small></div></div>`;
+    if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! The pond is easy; the ocean and deep water hold the big ones. Every water has its own fish.</small></div></div>`;
     body.innerHTML = h;
   } else if (menuKind === "journal") {
     title.textContent = "📖 Fish journal";
     const seen = FISH.filter(f => state.dex[f.id]).length;
-    note.innerHTML = `${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}<br>Bubbling spots, Shiny Lures and better rods make rarer fish bite more often.`;
-    const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Sea"]];
+    const nightNow = isNight(hostNow());
+    note.innerHTML = `<b>${clockText(hostNow())} · ${periodOf(hostNow())}</b> — ${nightNow ? "🌙 night fish are biting (until 6 am)" : "☀️ day fish are biting (until 8 pm)"}. Bubbling spots move every half hour.<br>${seen}/${FISH.length} species found by your team. Rarities: ${RARITY.map(r => `<span class="rtag" style="--rc:${r.col}">${r.gem ? r.gem + " " : ""}${r.name}</span>`).join(" ")}`;
+    const tabs = [["all", "All"], ["pond", "Pond"], ["river", "River"], ["lake", "Lake"], ["sea", "Ocean"]];
     let h = `<div class="tabs">${tabs.map(([k, t]) => `<button class="${journalTab === k ? "on" : ""}" data-tab="${k}">${t}</button>`).join("")}</div><div class="dex">`;
     for (const f of FISH.filter(f => journalTab === "all" || f.water.includes(journalTab))) {
       const d = state.dex[f.id];
-      const where = f.water.map(w => w[0].toUpperCase() + w.slice(1)).join(", ") + (f.deep ? " · deep" : "") + (f.time ? ` · ${f.time === "night" ? "🌙" : "☀️"}` : "");
+      const where = f.water.map(w => WATER_LABEL[w]).join(", ") + (f.deep ? " · deep" : "");
       const rr = RARITY[f.rarity];
       h += `<div class="cell ${d ? "" : "unseen"}" style="--rc:${rr.col}">${fishIcon(f.id)}<b>${d ? f.name : "???"}</b>
         <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>
-        <div style="color:var(--muted)">${d ? where : `Lv ${f.lvl}+ · ${f.water.map(w => w[0].toUpperCase() + w.slice(1)).join(", ")}`}</div>
+        <div style="color:var(--muted)">${d ? where : `Lv ${f.lvl}+ · ${f.water.map(w => WATER_LABEL[w]).join(", ")}`}</div>
+        ${f.time ? `<div style="font-size:.7rem;color:${f.time === "night" ? "#b8c0ff" : "#ffe08a"}">${f.time === "night" ? "🌙 Night only" : "☀️ Day only"}${(f.time === "night") !== nightNow ? " · not now" : " · biting now"}</div>` : `<div style="font-size:.7rem;color:var(--muted)">🕐 Any time</div>`}
         ${d ? `<div>×${d.n} · 🏆 ${d.best} kg</div>` : ""}</div>`;
     }
     body.innerHTML = h + "</div>";
@@ -2534,6 +2563,7 @@ function show(id) {
 }
 function showLobby() { show("lobby"); renderLobby(); }
 function enterGame() {
+  lastNight = null;
   show("game-screen");
   document.getElementById("code-show").textContent = net.code;
   disp[0] = disp[1] = null; petPos[0] = petPos[1] = null;
