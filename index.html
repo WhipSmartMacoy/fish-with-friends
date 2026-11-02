@@ -877,7 +877,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1830";
+const BUILD = "2026.11.02-1845";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -2835,7 +2835,7 @@ function drawReel(now, sw, sh) {
   const bw = rad * 1.5, bx = cx - bw / 2, by = cy + rad + ringW + 8;
   ctx.fillStyle = "#0e2a4a"; ctx.fillRect(bx, by, bw, 9); ctx.strokeStyle = "#f4ecd0"; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, 9);
   ctx.fillStyle = R.strain > .66 ? "#ff5a4a" : R.strain > .33 ? "#ffb030" : "#7ae0ff"; ctx.fillRect(bx + 1, by + 1, (bw - 2) * R.strain, 7);
-  const hint = `${isTouch ? "Tap" : "Space"} in the green · avoid the red`;
+  const hint = `${isTouch ? "Tap" : "Space"} in the green · don't let it pass · avoid the red`;
   let hfs = 12; ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`;
   const hw = ctx.measureText(hint).width; if (hw > sw * .86) { hfs = Math.max(9, Math.floor(hfs * sw * .86 / hw)); ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`; }
   const tw = ctx.measureText(hint).width + 16;
@@ -3053,7 +3053,7 @@ function startReel(L) {
     speed: Math.min(3.3, 1.6 + r * .32 + f.d * .05) * (1 - effPow(rod) * .05),          // radians per second
     green: clamp(.8 - r * .09 - f.d * .012 + rod.power * .06 + lvl * .01, .36, .9),  // width of a catch zone (radians)
     need: 3 + Math.min(r, 3) + (r >= 4 ? 1 : 0) + Math.floor((L.dBoost || 0) / 2), got: 0, strain: 0, zones: [], fx: [],
-    flipAt: r >= 3 ? 1.6 + Math.random() * 2 : Infinity, pull: r >= 3 ? .03 * (r - 2) : r === 2 ? 0 : -.05,
+    flipAt: r >= 3 ? 1.6 + Math.random() * 2 : Infinity, pull: r >= 3 ? .03 * (r - 2) : r === 2 ? 0 : -.02,
   };
   const gap = L.gap || 0;
   if (gap > 0) {                                             // fishing above your rod: very difficult
@@ -3085,6 +3085,13 @@ function tickReel(dt) {
   if (R.t >= R.flipAt) { R.dir *= -1; R.flipAt = R.t + 1.8 + Math.random() * 2.4; R.fx.push({ text: "↺", col: "#ffe070", t0: R.t }); sfx("flip"); }
   for (const z of R.zones) if (z.vel) z.a = (z.a + z.vel * dt + TAU) % TAU;
   R.strain = clamp(R.strain + R.pull * dt, 0, 1);
+  // letting the needle sweep right through a green zone without tapping counts as a miss
+  for (const z of R.zones) {
+    if (z.kind !== "green") continue;
+    const inside = Math.abs(angDiff(R.ang, z.a)) <= z.w / 2;
+    if (z.inside && !inside && R.t > .3) dialMiss(R, "Missed!");
+    z.inside = inside;
+  }
   R.fx = R.fx.filter(f => R.t - f.t0 < .9);
   if (R.got >= R.need || R.strain >= 1) {
     const ok = R.got >= R.need;
@@ -3092,6 +3099,11 @@ function tickReel(dt) {
     fishing.phase = "idle"; fishing.reel = null;
     if (ok) petHop[net.seat] = performance.now() + 600;
   }
+}
+function dialMiss(R, text) {
+  R.strain += (text === "Missed!" ? .22 : .16) * (1 - Math.min(R.rodPow, 5) * .07);
+  R.fx.push({ text, col: "#bfe0f4", t0: R.t, ring: text === "Missed!" ? "#bfe0f4" : undefined });
+  sfx("miss");
 }
 function dialTap() {
   const R = fishing.reel;
@@ -3110,9 +3122,7 @@ function dialTap() {
     R.fx.push({ text: "Snagged!", col: "#ff8a7a", t0: R.t, ring: "#ff5a4a" });
     sfx("snag"); try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch {}
   } else {
-    R.strain += .16 * (1 - Math.min(R.rodPow, 5) * .07);
-    R.fx.push({ text: "Miss", col: "#bfe0f4", t0: R.t });
-    sfx("miss");
+    dialMiss(R, "Miss");
   }
 }
 

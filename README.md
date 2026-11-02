@@ -18,6 +18,7 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Hook:** when a fish bites, a big **!** pops up over your angler's head (and on the bobber). Tap Space or the **HOOK!** button fast.
 - **Reel (a Dredge-style dial):** a needle sweeps around a ring. **Tap** (Space or the 🎯 button) while it's inside a **green catch zone**.
   - Each good tap fills one pip. Hitting the bright centre of the zone is a *Perfect* and eases line strain.
+  - **Don't let it pass:** if the needle sweeps all the way through a green zone and you don't tap, that's a *Missed!* and the line strains a little more than a tap on empty ring.
   - **Stay off the red snags:** tapping on one strains the line hard and costs you a pip. Tapping on empty ring strains it a little.
   - If the strain bar fills, the fish gets away.
   - Rarer fish move the needle faster, shrink the green zone and add more red snags. Epic and Legendary fish can swing the needle back the other way, and their snags drift around the ring.
