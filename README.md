@@ -5,6 +5,13 @@ A co-op fishing game for two players, each on their own device. It's the sister 
 **Play:** https://whipsmartmacoy.github.io/fish-with-friends/ (once GitHub Pages is on — see *Hosting*)
 
 ## Controls
+**On phones** the game fills the whole screen, with a slim chat bar at the bottom. The top edge is kept clear for the Dynamic Island.
+- **Move:** touch anywhere on the game. A joystick pops up centred under your finger and stays there until you lift it.
+- **Act:** the 🎣 action button and 🧊 cooler sit in the bottom-right corner, or the bottom-left if you switch them in ⚙️ Settings. While a fish is biting or you're on the dial, a tap anywhere on the screen counts as well.
+- **⚙️ Settings:** choose which side the buttons go on, how see-through the joystick is (10% by default), the zoom, and get to invite, stats, the journal and leaving the lobby.
+- **Full screen:** "Add to Home Screen" in Safari opens the game full screen. A home-screen copy keeps its own saves, separate from the copy in Safari.
+
+**On desktop:**
 - **Move:** WASD / arrow keys, or the joystick on phones. The view is **isometric** like Mine with friends, and the stick moves you in screen directions (up = up the screen).
 - **Cast:** face the water and **hold Space** (or the 🎣 button). The power bar swings back and forth. Let go to cast; the dashed square shows where the bobber will land.
 - **Hook:** when a fish bites, a big **!** pops up over your angler's head (and on the bobber). Tap Space or the **HOOK!** button fast.

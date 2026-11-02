@@ -8,6 +8,9 @@
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=1">
 <link rel="icon" type="image/png" sizes="48x48" href="icons/favicon.png?v=1">
 <meta name="apple-mobile-web-app-title" content="Fish w/ Friends">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Fish with friends</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -238,6 +241,59 @@
     html[data-device] .playarea { grid-template-rows: 1fr auto; align-content: stretch; }
     html[data-device] .chat { height: auto; }
   }
+
+  /* ===== Immersive phone layout: the game fills the screen, a slim chat bar at the bottom, the Dynamic Island strip kept clear.
+     Floating joystick wherever you touch; action buttons in a corner (left or right, chosen in Settings). ===== */
+  :root { --chatbar: 48px; --joy-op: .9; }
+  .act-cluster { display: none; }
+  .fjoy { display: none; }
+  .cool-btn { width: 56px; height: 56px; border-radius: 50%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; font-size: .7rem; }
+  .cool-btn span { font-size: 1.35rem; } .cool-btn em { font-style: normal; }
+  html.immersive body.ingame { background: #071526; }
+  html.immersive .app { padding: 0 !important; gap: 0 !important; }
+  html.immersive .playarea { display: block !important; }
+  html.immersive .stage { position: fixed !important; left: 0; right: 0; top: env(safe-area-inset-top); bottom: calc(var(--chatbar) + env(safe-area-inset-bottom));
+                          width: auto !important; height: auto !important; aspect-ratio: auto !important; border: 0; border-radius: 0;
+                          justify-self: stretch !important; align-self: stretch !important; margin: 0 !important; }
+  html.immersive .topbar, html.immersive .hudbar { position: fixed; z-index: 15; top: calc(env(safe-area-inset-top) + 6px); background: rgba(8, 26, 52, .58);
+                          border: 1px solid rgba(244, 236, 208, .45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  html.immersive .topbar { right: 6px; left: auto; padding: 3px 4px 3px 10px; gap: 6px; border-radius: 20px; font-size: .8rem; max-width: 46vw; }
+  html.immersive .topbar > span:first-child, html.immersive #invite, html.immersive #zoom-btn, html.immersive #panel-btn, html.immersive #leave { display: none !important; }
+  html.immersive .topbar .code { font-size: .92rem; letter-spacing: 2px; }
+  html.immersive .topbar .conn { font-size: .72rem; max-width: 84px; }
+  html.immersive #settings-btn { padding: 3px 9px; border-radius: 16px; font-size: .95rem; }
+  html.immersive .hudbar { left: 6px; right: auto; max-width: calc(54vw - 12px); padding: 4px 10px; gap: 2px 10px; border-radius: 14px; font-size: .76rem;
+                           justify-content: flex-start; flex-wrap: wrap; pointer-events: none; }
+  html.immersive .hud-chip b { font-size: .86rem; }
+  html.immersive .xpbar { width: 34px; height: 6px; }
+  html.immersive #bag-btn { display: none; }
+  html.immersive .minimap { top: 52px; right: 6px; width: 74px; height: 74px; }
+  html.immersive .toast, html.immersive .toast.top { top: 60px; bottom: auto; }
+  html.immersive .menu { top: 50px; }
+  html.immersive .chat { position: fixed; z-index: 14; left: 0; right: 0; bottom: 0; height: calc(var(--chatbar) + env(safe-area-inset-bottom)) !important;
+                         padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) !important; border: 0; border-top: 1px solid rgba(244, 236, 208, .45); border-radius: 0;
+                         flex-direction: row; align-items: center; gap: 8px; background: rgba(7, 21, 38, .94); }
+  html.immersive .chat-log { flex: 0 1 40%; max-height: 34px !important; min-height: 0 !important; font-size: .72rem !important; line-height: 1.2 !important; overflow: hidden; }
+  html.immersive .chat-form { flex: 1; min-width: 0; }
+  html.immersive .chat-form input { font-size: 16px; padding: 6px 9px !important; }
+  html.immersive .chat-form button { padding: 6px 10px !important; }
+  html.immersive .joy { display: none !important; }
+  html.immersive .act-cluster.touch { position: fixed; z-index: 13; display: flex !important; flex-direction: row; align-items: flex-end; gap: 6px;
+                         bottom: calc(var(--chatbar) + env(safe-area-inset-bottom) + 14px); right: 14px; pointer-events: none; }
+  html.immersive.act-left .act-cluster.touch { right: auto; left: 14px; flex-direction: row-reverse; }
+  html.immersive .act-col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  html.immersive .act-col button { pointer-events: auto; touch-action: none; }
+  html.immersive .act-btn { width: 92px !important; height: 92px !important; margin: 0 !important; font-size: 1.15rem !important; box-shadow: 0 4px 0 #061528, inset 0 0 0 1px #0e2a4a; }
+  html.immersive .pet-dock { display: grid !important; margin: 0 !important; align-self: flex-end; }
+  html.immersive #pet-canvas { width: 66px; height: 66px; }
+  html.immersive body.menu-open .act-cluster { display: none !important; }
+  html.immersive .fjoy { position: fixed; z-index: 16; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%; pointer-events: none;
+                         border: 3px solid #f4ecd0; background: radial-gradient(circle, rgba(63, 138, 192, .5), rgba(14, 42, 74, .75)); box-shadow: inset 0 0 0 3px #0e2a4a; opacity: var(--joy-op); }
+  html.immersive .fjoy.on { display: block; }
+  .fjoy-knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%; transform: translate(-50%, -50%);
+               background: linear-gradient(180deg, #ffe890, #f0b840); border: 3px solid #fff4d0; box-shadow: 0 3px 0 #061528; }
+  .setrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .setrow input[type=range] { flex: 1; min-width: 140px; accent-color: #ffd860; }
 </style>
 </head>
 <body>
@@ -292,6 +348,7 @@
     <button id="invite">🔗 Invite</button>
     <button id="zoom-btn" title="Zoom">🗺️</button>
     <button id="panel-btn">📊</button>
+    <button id="settings-btn" title="Settings">⚙️</button>
     <button id="leave">🚪</button>
   </div>
   <div class="hudbar">
@@ -313,7 +370,6 @@
       </div>
     </div>
     <div class="joy touch" id="joy" aria-label="Movement stick"><div class="joy-ring"></div><div class="joy-knob" id="joy-knob"></div></div>
-    <div class="pet-dock touch" id="pet-dock"><canvas id="pet-canvas" width="192" height="192"></canvas></div>
     <div class="chat" id="chat">
       <div class="chat-log" id="chat-log"></div>
       <form class="chat-form" id="chat-form" autocomplete="off">
@@ -321,7 +377,13 @@
         <button type="submit">Send</button>
       </form>
     </div>
-    <button class="act-btn touch" id="act-btn">🎣<br>Cast</button>
+    <div class="act-cluster touch" id="act-cluster">
+      <div class="pet-dock" id="pet-dock"><canvas id="pet-canvas" width="192" height="192"></canvas></div>
+      <div class="act-col">
+        <button class="cool-btn" id="cool-btn" title="Cooler"><span>🧊</span><em id="hud-cooler2">0/10</em></button>
+        <button class="act-btn" id="act-btn">🎣<br>Cast</button>
+      </div>
+    </div>
     <aside class="side" id="side">
       <div class="side-head"><h3 style="margin:0">📊 Stats</h3><button id="close-side">✕ Close</button></div>
       <div class="card player p1" id="player-0"></div>
@@ -348,6 +410,7 @@
     </aside>
   </div>
 </section>
+<div class="fjoy" id="fjoy" aria-hidden="true"><div class="fjoy-knob" id="fjoy-knob"></div></div>
 <input type="file" id="import-file" accept=".json,application/json" class="hidden">
 
 <script>
@@ -770,7 +833,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1430";
+const BUILD = "2026.11.02-1500";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -782,11 +845,23 @@ function detectDevice() {
   if (phone && w === 393 && h === 852) return "15pro";          // iPhone 15 Pro (also 14 Pro, 15, 16)
   return "standard";
 }
-function applyFit() { document.documentElement.dataset.device = detectDevice(); fitStage(); }
+const immersive = () => document.documentElement.classList.contains("immersive");
+function applyFit() {
+  document.documentElement.dataset.device = detectDevice();
+  document.documentElement.classList.toggle("immersive", matchMedia("(hover: none), (max-width: 780px)").matches);
+  applyControlPrefs();
+  fitStage();
+}
+function applyControlPrefs() {
+  const p = readJSON(PREFS_KEY) || {};
+  document.documentElement.classList.toggle("act-left", p.actSide === "left");
+  document.documentElement.style.setProperty("--joy-op", String(1 - (p.joyClear ?? 10) / 100));
+}
 // Size the square game view so the bars, controls and chat all fit on screen — whatever the browser's toolbars leave us.
 function fitStage() {
   const pa = document.querySelector(".playarea"), st = document.getElementById("stage");
   if (!pa || !st) return;
+  if (document.documentElement.classList.contains("immersive")) { document.documentElement.style.removeProperty("--stage"); delete document.documentElement.dataset.short; return; }
   const portrait = getComputedStyle(pa).gridTemplateAreas.includes("pet");
   if (!portrait || !pa.clientHeight) { document.documentElement.style.removeProperty("--stage"); delete document.documentElement.dataset.short; return; }
   const short = pa.clientHeight < 560 + (document.documentElement.dataset.short ? 24 : 0);   // a little hysteresis
@@ -799,7 +874,7 @@ function fitStage() {
   const size = Math.max(200, Math.min(pa.clientWidth, room));
   document.documentElement.style.setProperty("--stage", size + "px");
 }
-addEventListener("resize", () => fitStage());
+addEventListener("resize", () => applyFit());
 addEventListener("orientationchange", () => setTimeout(fitStage, 300));
 
 async function checkForUpdate() {
@@ -2112,8 +2187,9 @@ function drawOverlay(now) {
   if (biting(L) && fishing.phase === "wait") {
     const msg = isTouch ? "Tap HOOK!" : "Press SPACE!";
     ctx.font = `bold 22px "Trebuchet MS", system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.lineWidth = 5; ctx.strokeStyle = "#08203a"; ctx.strokeText(msg, sw / 2, 30);
-    ctx.fillStyle = "#ffe070"; ctx.fillText(msg, sw / 2, 30);
+    const my = immersive() ? 76 : 30;
+    ctx.lineWidth = 5; ctx.strokeStyle = "#08203a"; ctx.strokeText(msg, sw / 2, my);
+    ctx.fillStyle = "#ffe070"; ctx.fillText(msg, sw / 2, my);
   }
 }
 
@@ -2220,7 +2296,7 @@ function drawMinimap(now) {
 // ================= Local play: moving, casting, hooking, reeling =================
 const isTouch = matchMedia("(hover: none)").matches;
 const keys = new Set();
-const joy = { id: null, x: 0, y: 0 };
+const joy = { id: null, x: 0, y: 0, cx: 0, cy: 0 };
 const moveVec = { x: 0, y: 0, len: 0 };
 const fishing = { phase: "idle", power: 0, pdir: 1, reel: null, pendingUntil: 0, bitNote: 0, missSent: 0 };
 const shownAt = new Map();      // when each line was first seen, so the cast animation plays once
@@ -2445,10 +2521,34 @@ addEventListener("blur", () => { keys.clear(); actUp(); });
   act.addEventListener("pointerup", e => { e.preventDefault(); actUp(); });
   act.addEventListener("pointercancel", () => actUp());
   act.addEventListener("contextmenu", e => e.preventDefault());
-  // tapping/holding the game view itself also works as the action button
-  canvas.addEventListener("pointerdown", e => { if (e.pointerType !== "mouse" || e.button === 0) { canvas.setPointerCapture(e.pointerId); actDown(); } });
-  canvas.addEventListener("pointerup", () => actUp());
-  canvas.addEventListener("pointercancel", () => actUp());
+  // Desktop: clicking the game view works as the action button.
+  // Phones (immersive): touching the game view pops up a floating joystick centred on your finger; it stays put until you lift.
+  // While a fish is biting or you're on the dial, a tap anywhere is the action instead.
+  const fj = document.getElementById("fjoy"), fk = document.getElementById("fjoy-knob"), JR = 52;
+  let tapId = null;
+  const fjMove = e => {
+    let dx = (e.clientX - joy.cx) / JR, dy = (e.clientY - joy.cy) / JR; const l = Math.hypot(dx, dy);
+    if (l > 1) { dx /= l; dy /= l; }
+    joy.x = dx; joy.y = dy; fk.style.transform = `translate(calc(-50% + ${dx * JR}px), calc(-50% + ${dy * JR}px))`;
+  };
+  canvas.addEventListener("pointerdown", e => {
+    if (!state) return;
+    if (!immersive()) { if (e.pointerType !== "mouse" || e.button === 0) { canvas.setPointerCapture(e.pointerId); tapId = e.pointerId; actDown(); } return; }
+    e.preventDefault(); ensureAudio();
+    const L = state.players[net.seat].line;
+    if (fishing.phase === "reel" || (fishing.phase === "wait" && biting(L))) { tapId = e.pointerId; actDown(); return; }
+    if (joy.id !== null) return;
+    joy.id = e.pointerId; joy.cx = e.clientX; joy.cy = e.clientY; joy.x = joy.y = 0;
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    fj.style.left = e.clientX + "px"; fj.style.top = e.clientY + "px"; fk.style.transform = "translate(-50%, -50%)"; fj.classList.add("on");
+  });
+  canvas.addEventListener("pointermove", e => { if (e.pointerId === joy.id) fjMove(e); });
+  const fjEnd = e => {
+    if (e.pointerId === joy.id) { joy.id = null; joy.x = joy.y = 0; fj.classList.remove("on"); }
+    if (e.pointerId === tapId) { tapId = null; actUp(); }
+  };
+  canvas.addEventListener("pointerup", fjEnd); canvas.addEventListener("pointercancel", fjEnd);
+  document.getElementById("cool-btn").addEventListener("click", () => toggleMenu("cooler"));
 })();
 
 // ================= Sound (tiny synth blips) =================
@@ -2512,7 +2612,7 @@ function renderHud() {
   document.getElementById("hud-lvl").textContent = lvl;
   const a = XP_AT[lvl - 1], b = XP_AT[lvl] ?? a;
   document.getElementById("hud-xp").style.width = (lvl >= 10 ? 100 : Math.round((me.xp - a) / (b - a) * 100)) + "%";
-  document.getElementById("hud-cooler").textContent = `${me.items.length}/${COOLERS[me.cooler].size}`;
+  document.getElementById("hud-cooler").textContent = document.getElementById("hud-cooler2").textContent = `${me.items.length}/${COOLERS[me.cooler].size}`;
   const bait = me.useBait !== "none" && BAITS[me.useBait] && me.bait[me.useBait] > 0 ? `${BAITS[me.useBait].icon} ×${me.bait[me.useBait]}` : "🪝 no bait";
   document.getElementById("hud-bait").textContent = bait;
   document.getElementById("hud-time").textContent = `${clockText(hostNow())} ${periodOf(hostNow())}`;
@@ -2538,8 +2638,8 @@ function renderSide() {
 
 // ================= Menus: Tackle Shop, Fish Market, Cooler, Journal =================
 let menuKind = null, journalTab = "all";
-function openMenu(kind) { menuKind = kind; document.getElementById("menu").classList.remove("hidden"); keys.clear(); renderMenu(); }
-function closeMenu() { menuKind = null; document.getElementById("menu").classList.add("hidden"); }
+function openMenu(kind) { menuKind = kind; document.getElementById("menu").classList.remove("hidden"); document.body.classList.add("menu-open"); keys.clear(); renderMenu(); }
+function closeMenu() { menuKind = null; document.getElementById("menu").classList.add("hidden"); document.body.classList.remove("menu-open"); }
 function toggleMenu(kind) { menuKind === kind ? closeMenu() : openMenu(kind); }
 document.getElementById("menu-close").onclick = closeMenu;
 function renderMenu() {
@@ -2594,6 +2694,20 @@ function renderMenu() {
     });
     if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! The pond is easy; the ocean and deep water hold the big ones. Every water has its own fish.</small></div></div>`;
     body.innerHTML = h;
+  } else if (menuKind === "settings") {
+    const p = readJSON(PREFS_KEY) || {}, side = p.actSide === "left" ? "left" : "right", clear = p.joyClear ?? 10;
+    title.textContent = "⚙️ Settings";
+    note.innerHTML = `Lobby <b style="color:var(--gold);letter-spacing:2px">${net.code}</b> · ${net.connected ? "🟢 friend connected" : "waiting for your friend"} · v${BUILD}`;
+    body.innerHTML = `
+      <div class="opt-title">Action buttons</div>
+      <div class="setrow choices"><button class="style ${side === "left" ? "on" : ""}" data-set-side="left">◀ Bottom left</button><button class="style ${side === "right" ? "on" : ""}" data-set-side="right">Bottom right ▶</button></div>
+      <div class="opt-title">Joystick see-through</div>
+      <div class="setrow"><input type="range" id="joy-clear" min="0" max="80" step="5" value="${clear}"><b id="joy-clear-v">${clear}%</b></div>
+      <div class="opt-title">Zoom</div>
+      <div class="setrow choices">${ZOOMS.map((z, i) => `<button class="style ${zoom === i ? "on" : ""}" data-set-zoom="${i}">${z.icon} ${["Normal", "Wide", "Close"][i]}</button>`).join("")}</div>
+      <div class="opt-title">Lobby</div>
+      <div class="setrow"><button data-set="invite">🔗 Copy invite link</button><button data-set="stats">📊 Stats & team</button><button data-set="journal">📖 Journal</button><button data-set="leave">🚪 Leave lobby</button></div>
+      <div class="keys" style="margin-top:4px">Touch anywhere on the water or land to bring up the joystick; it stays where you touched until you lift your finger. While a fish bites or you're on the dial, a tap anywhere works too.</div>`;
   } else if (menuKind === "journal") {
     title.textContent = "📖 Fish journal";
     const seen = FISH.filter(f => state.dex[f.id]).length;
@@ -2623,6 +2737,12 @@ document.getElementById("menu-body").addEventListener("click", e => {
   else if (b.dataset.bait) sendAction({ type: "bait", id: b.dataset.bait });
   else if (b.dataset.warp) sendAction({ type: "warp", mode: b.dataset.warp });
   else if (b.dataset.tab) { journalTab = b.dataset.tab; renderMenu(); }
+  else if (b.dataset.setSide) { writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), actSide: b.dataset.setSide }); applyControlPrefs(); renderMenu(); }
+  else if (b.dataset.setZoom) { zoom = +b.dataset.setZoom; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), zoom }); document.getElementById("zoom-btn").textContent = ZOOMS[zoom].icon; renderMenu(); }
+  else if (b.dataset.set === "invite") document.getElementById("invite").click();
+  else if (b.dataset.set === "stats") { closeMenu(); document.getElementById("side").classList.add("open"); }
+  else if (b.dataset.set === "journal") openMenu("journal");
+  else if (b.dataset.set === "leave") document.getElementById("leave").click();
 });
 
 // ================= Screens =================
@@ -2651,6 +2771,12 @@ function cycleZoom() {
 document.getElementById("zoom-btn").textContent = ZOOMS[zoom].icon;
 document.getElementById("zoom-btn").onclick = cycleZoom;
 document.getElementById("bag-btn").onclick = () => toggleMenu("cooler");
+document.getElementById("settings-btn").onclick = () => toggleMenu("settings");
+document.getElementById("menu-body").addEventListener("input", e => {
+  if (e.target.id !== "joy-clear") return;
+  const v = +e.target.value; writeJSON(PREFS_KEY, { ...(readJSON(PREFS_KEY) || {}), joyClear: v }); applyControlPrefs();
+  document.getElementById("joy-clear-v").textContent = v + "%";
+});
 document.getElementById("journal-btn").onclick = () => { document.getElementById("side").classList.remove("open"); openMenu("journal"); };
 document.getElementById("panel-btn").onclick = () => document.getElementById("side").classList.add("open");
 document.getElementById("close-side").onclick = () => document.getElementById("side").classList.remove("open");
