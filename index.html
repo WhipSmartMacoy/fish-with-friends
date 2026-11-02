@@ -143,6 +143,7 @@
   .side { grid-area: side; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
   .side-head { display: none; justify-content: space-between; align-items: center; }
   .player { border-color: var(--pc, #f4ecd0); }
+  .free-seat { float: right; font-size: .7rem; padding: 2px 8px; background: transparent; box-shadow: none; }
   .player h3 { margin: 0 0 4px; font-size: 1rem; }
   .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; font-size: .82rem; }
   .stats div { background: var(--panel2); border-radius: 7px; padding: 3px 7px; }
@@ -874,7 +875,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1700";
+const BUILD = "2026.11.02-1715";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1553,9 +1554,8 @@ function onHostData(c, msg) {
     let seat = state.players.findIndex((p, i) => i > 0 && p.cid === cid);
     if (seat < 0) seat = state.players.findIndex((p, i) => i > 0 && !p.cid && !p.online);
     if (seat < 0 && state.players.length < roomMax()) { seat = state.players.length; state.players.push(newPlayer(seat)); }
-    if (seat < 0 && onlineCount() >= roomMax()) { c.send({ type: "full", max: roomMax() }); setTimeout(() => c.close(), 300); return; }
-    if (seat < 0) seat = state.players.findIndex((p, i) => i > 0 && !p.online);   // the room has an away seat: hand it over
-    if (seat < 0) { c.send({ type: "full", max: roomMax() }); setTimeout(() => c.close(), 300); return; }
+    // seats belong to the angler who first sat in them: a newcomer never takes over someone else's (even while they're away)
+    if (seat < 0) { c.send({ type: "full", max: roomMax(), reserved: onlineCount() < roomMax() }); setTimeout(() => c.close(), 300); return; }
     const old = net.conns.get(seat); if (old && old !== c) { old._seat = null; try { old.close(); } catch {} }
     c._seat = seat; net.conns.set(seat, c);
     const g = state.players[seat];
@@ -1616,7 +1616,7 @@ function joinLobby(code) {
     net.conn = c;
     c.on("open", () => c.send({ type: "hello", name, look: myLook, cid: CID, saved: readJSON(saveKey(code)) }));
     c.on("data", msg => {
-      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg(`That lobby is full (${msg.max || MAX_PLAYERS} anglers max).`, true); }
+      if (msg.type === "full") { teardown(); showLobby(); return lobbyMsg(msg.reserved ? `Every seat in that lobby belongs to another angler (${msg.max} max). The host can free an away angler's seat in 📊 Stats.` : `That lobby is full (${msg.max || MAX_PLAYERS} anglers max).`, true); }
       if (msg.type === "pos") {
         const p = state && state.players[msg.seat];
         if (p && msg.seat !== net.seat) Object.assign(p, { x: msg.x, y: msg.y, dir: msg.dir, anim: msg.anim || 0 });
@@ -2780,7 +2780,7 @@ function setConnected(on) {
   const el = document.getElementById("conn"), n = state ? onlineCount() : 1;
   const others = state ? state.players.filter((p, i) => i !== net.seat && online(i)).map(p => p.name) : [];
   el.textContent = on ? (immersive() ? `🟢 ${n}/${roomMax()}` : `🟢 ${n}/${roomMax()} · fishing with ${others.join(", ")}`)
-    : net.isHost ? (immersive() ? `1/${roomMax()} · share!` : `Waiting for friends (up to ${roomMax() - 1})… share the code!`) : "🔴 Disconnected";
+    : net.isHost ? (immersive() ? `1/${roomMax()} · share!` : `Waiting for ${roomMax() === 2 ? "your friend" : `up to ${roomMax() - 1} friends`}… share the code!`) : "🔴 Disconnected";
   el.title = others.length ? "Fishing with " + others.join(", ") : "";
   el.classList.toggle("on", on);
   renderSide();
@@ -2807,7 +2807,8 @@ function renderSide() {
     el.style.setProperty("--pc", SEAT_COL[i]);
     const here = online(i);
     const best = p.best && CATCH[p.best.id] ? `${CATCH[p.best.id].name} ${p.best.kg} kg` : "—";
-    el.innerHTML = `<h3>${SEAT_ICON[i]} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${i === 0 ? " 👑" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}</h3>
+    const free = net.isHost && i > 0 && !here ? ` <button class="free-seat" data-free="${i}" title="Give this seat to someone new (their progress is wiped)">Free seat</button>` : "";
+    el.innerHTML = `<h3>${SEAT_ICON[i]} ${esc(p.name)}${i === net.seat ? " (you)" : ""}${i === 0 ? " 👑" : ""}${here ? "" : " <small style='color:var(--muted)'>· away</small>"}${free}</h3>
       <div class="stats"><div>🎣 Lv <b>${levelOf(p.xp)}</b></div><div>🐟 <b>${p.caught}</b> caught</div>
       <div style="color:${RARITY[RODS[p.rod].tier].col}">${rodIcon(p.rod)} ${RODS[p.rod].name}</div><div>🧊 ${p.items.length}/${COOLERS[p.cooler].size}</div>
       <div style="grid-column:span 2">🏆 Best: ${esc(best)}</div></div>`;
@@ -2957,6 +2958,16 @@ function cycleZoom() {
 document.getElementById("zoom-btn").textContent = ZOOMS[zoom].icon;
 document.getElementById("zoom-btn").onclick = cycleZoom;
 document.getElementById("bag-btn").onclick = () => toggleMenu("cooler");
+document.getElementById("players-box").addEventListener("click", e => {
+  const b = e.target.closest("[data-free]"); if (!b || !net.isHost) return;
+  const i = +b.dataset.free, p = state.players[i];
+  if (!p || i === 0 || online(i)) return;
+  if (!confirm(`Free ${p.name}'s seat? Their level, rod and cooler are wiped so someone new can join. (Team gold and the journal stay.)`)) return;
+  const name = p.name;
+  state.players[i] = newPlayer(i);              // no owner: the next new angler to join takes it
+  addLog(`${name}'s seat was freed.`, false);
+  save(); broadcast({ text: `${name}'s seat is free for a new angler.`, ok: true, neutral: true });
+});
 document.getElementById("settings-btn").onclick = () => toggleMenu("settings");
 document.getElementById("menu-body").addEventListener("input", e => {
   if (e.target.id !== "joy-clear") return;

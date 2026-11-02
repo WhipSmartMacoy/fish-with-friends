@@ -26,6 +26,7 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 
 ## Gameplay
 - **Lobbies for 2 or 4 anglers:** pick 👥 2 or 👨‍👩‍👧‍👦 4 anglers before you create a lobby, then share the 5-character code. The room grows as friends join, and anyone past the limit is told it's full. Reopening a lobby keeps its size.
+  - **Seats are reserved:** once you've joined, your seat stays yours even while you're away, and nobody else can take it. The host can tap **Free seat** on an away angler in 📊 Stats to give it to someone new. That wipes the seat's level, rod and cooler; team gold and the journal stay.
   - Each angler gets their own colour: 🔵 host, 🟠, 🟢, 🟣.
   - Leave and rejoin and you get your own seat and progress back.
   - **The game scales with the group:** each extra angler online adds a bubbling hot spot, and fish sell for **+5% per extra angler** (+15% with 4).
