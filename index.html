@@ -767,7 +767,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1400";
+const BUILD = "2026.11.02-1430";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1599,7 +1599,10 @@ function texQuad(g, img, sx, sy, sw, sh, N, U, V) {
   g.imageSmoothingEnabled = true; g.drawImage(img, sx, sy, sw, sh, -0.6, -0.6, sw + 1.2, sh + 1.2);
   g.restore();
 }
-function texTop(g, img, src, x, y, z = 0) { texQuad(g, img, ...src, iso(x, y, z), { x: IW / 2, y: IH / 2 }, { x: -IW / 2, y: IH / 2 }); }
+function texTop(g, img, src, x, y, z = 0) {   // grown 3% about its centre so neighbouring tiles overlap (no hairline seams)
+  const k = 1.03, C = iso(x + .5, y + .5, z), U = { x: IW / 2 * k, y: IH / 2 * k }, V = { x: -IW / 2 * k, y: IH / 2 * k };
+  texQuad(g, img, ...src, { x: C.x - (U.x + V.x) / 2, y: C.y - (U.y + V.y) / 2 }, U, V);
+}
 // a block column at tile (x, y) from height z0 up to z: its two visible sides plus a coloured top
 function column(g, x, y, z, o = {}) {
   const z0 = o.z0 ?? 0, dz = (z - z0) * IZ, A = iso(x, y + 1, z), B = iso(x + 1, y + 1, z), C = iso(x + 1, y, z);
@@ -1624,29 +1627,29 @@ const WATER_COL = {
 };
 const waterKindAt = (x, y) => { const t = tileAt(x, y); return isWater(t) ? t : (t === T.DOCK || t === T.BRIDGE) ? under[idx(x, y)] : 0; };
 const grassSrc = (x, y) => { const lx = ((x % CH) + CH) % CH, ly = ((y % CH) + CH) % CH; return [lx * 64, ly * 64, 64, 64]; };
-// ---- Ground, pre-drawn once per 15×15 chunk (the size of one Grass BG)
+// ---- Ground, pre-drawn once per 15×15 chunk (the size of one Grass BG).
+// Everything is drawn tile by tile so nothing paints outside its own tile: that keeps chunk seams clean
+// (a bank drawn by one chunk is never covered by the next chunk's grass). Docks and bridges are drawn live, above the ground.
+function grassTop(g, x, y) {
+  const G = TEX.grass;
+  if (!G) return polyFill(g, diamond(x, y), ["#6cbf4f", "#66b84a", "#72c455"][Math.floor(hash2(x, y, 3) * 3)]);
+  // the Grass BG covers one chunk; every other chunk is mirrored so the texture's edges always line up
+  const lx = ((x % CH) + CH) % CH, ly = ((y % CH) + CH) % CH, mx = Math.floor(x / CH) % 2, my = Math.floor(y / CH) % 2;
+  const sx = (mx ? CH - 1 - lx : lx) * 64, sy = (my ? CH - 1 - ly : ly) * 64;
+  const N = iso(x + mx, y + my), U = { x: (mx ? -1 : 1) * IW / 2, y: (mx ? -1 : 1) * IH / 2 }, V = { x: (my ? 1 : -1) * IW / 2, y: (my ? -1 : 1) * IH / 2 };
+  // clip to the tile's diamond, grown by half a unit so neighbouring tiles overlap and no hairline seams show
+  const c = iso(x + .5, y + .5), e = .6;
+  g.save(); g.beginPath();
+  diamond(x, y).forEach((p, k) => { const dx = p.x - c.x, dy = p.y - c.y, l = Math.hypot(dx, dy) || 1, q = { x: p.x + dx / l * e * 2, y: p.y + dy / l * e }; k ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); });
+  g.closePath(); g.clip();
+  g.transform(U.x / 64, U.y / 64, V.x / 64, V.y / 64, N.x, N.y);
+  g.imageSmoothingEnabled = true; g.drawImage(G, sx, sy, 64, 64, -1, -1, 66, 66);
+  g.restore();
+}
 function isoChunk(cx, cy) {
   const key = cx + "," + cy;
   if (bgCache.has(key)) { const v = bgCache.get(key); bgCache.delete(key); bgCache.set(key, v); return v; }
-  const x0 = cx * CH, y0 = cy * CH, R = isoCanvas(x0, y0, CH, CH), g = R.g, G = TEX.grass;
-  if (G) {   // the whole chunk's grass in one go; every other chunk is mirrored so the texture's edges always line up
-    let N = iso(x0, y0), U = { x: CH * IW / 2, y: CH * IH / 2 }, V = { x: -CH * IW / 2, y: CH * IH / 2 };
-    if (cx % 2) { N = { x: N.x + U.x, y: N.y + U.y }; U = { x: -U.x, y: -U.y }; }
-    if (cy % 2) { N = { x: N.x + V.x, y: N.y + V.y }; V = { x: -V.x, y: -V.y }; }
-    texQuad(g, G, 0, 0, G.width, G.height, N, U, V);
-  }
-  // water just behind this chunk's back edges sits low, so it pokes into this chunk: draw that sliver too
-  for (let k = -1; k < CH; k++) for (const [x, y] of k < 0 ? [[x0 - 1, y0 - 1]] : [[x0 - 1, y0 + k], [x0 + k, y0 - 1]]) {
-    const wk = waterKindAt(x, y); if (!wk) continue;
-    const cols = WATER_COL[wk]; polyFill(g, diamond(x, y, WZ), cols[Math.min((depthAt(x, y) || 1) - 1, cols.length - 1)]);
-  }
-  const grassTop = (x, y) => {
-    if (!G) return polyFill(g, diamond(x, y), ["#6cbf4f", "#66b84a", "#72c455"][Math.floor(hash2(x, y, 3) * 3)]);
-    const src = grassSrc(x, y), mx = ((Math.floor(x / CH) % 2) + 2) % 2, my = ((Math.floor(y / CH) % 2) + 2) % 2;
-    if (mx) src[0] = (CH - 1) * 64 - src[0]; if (my) src[1] = (CH - 1) * 64 - src[1];
-    const N = iso(x + mx, y + my), U = { x: (mx ? -1 : 1) * IW / 2, y: (mx ? -1 : 1) * IH / 2 }, V = { x: (my ? 1 : -1) * IW / 2, y: (my ? -1 : 1) * IH / 2 };
-    texQuad(g, G, ...src, N, U, V);
-  };
+  const x0 = cx * CH, y0 = cy * CH, R = isoCanvas(x0, y0, CH, CH), g = R.g;
   for (let sum = 0; sum <= 2 * CH - 2; sum++) for (let lx = 0; lx < CH; lx++) {
     const ly = sum - lx; if (ly < 0 || ly >= CH) continue;
     const x = x0 + lx, y = y0 + ly, t = tileAt(x, y), wk = waterKindAt(x, y);
@@ -1658,25 +1661,19 @@ function isoChunk(cx, cy) {
       g.strokeStyle = "rgba(235,250,255,.75)"; g.lineWidth = 2;                // foam where the water meets a bank behind it
       if (!waterKindAt(x - 1, y)) { const a = iso(x, y, WZ), b = iso(x, y + 1, WZ); g.beginPath(); g.moveTo(a.x, a.y + 1.5); g.lineTo(b.x, b.y + 1.5); g.stroke(); }
       if (!waterKindAt(x, y - 1)) { const a = iso(x, y, WZ), b = iso(x + 1, y, WZ); g.beginPath(); g.moveTo(a.x, a.y + 1.5); g.lineTo(b.x, b.y + 1.5); g.stroke(); }
-      if (t === T.DOCK || t === T.BRIDGE) {                                  // wooden deck on posts
-        const across = [T.DOCK, T.BRIDGE, T.PATH, T.SAND].includes(tileAt(x - 1, y)) || [T.DOCK, T.BRIDGE].includes(tileAt(x + 1, y));
-        for (const [px, py] of [[.1, .9], [.9, .9]]) { const q = across ? iso(x + px, y + .92, WZ) : iso(x + .92, y + 1 - px, WZ); g.fillStyle = "#4a2c18"; g.fillRect(q.x - 2, q.y - 10, 4, 10); }
-        column(g, x, y, .12, { z0: .02, sideL: "#7a4a24", sideR: "#5a3418", color: "#b07a44" });
-        g.strokeStyle = "#7a4a24"; g.lineWidth = 1.4;
-        for (let k = 1; k < 4; k++) { const a = across ? iso(x + k / 4, y, .12) : iso(x, y + k / 4, .12), b = across ? iso(x + k / 4, y + 1, .12) : iso(x + 1, y + k / 4, .12); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
-        if (t === T.BRIDGE) for (const e of [0.04, 0.96]) { const a = across ? iso(x, y + e, .12) : iso(x + e, y, .12), b = across ? iso(x + 1, y + e, .12) : iso(x + e, y + 1, .12); g.strokeStyle = "#5a3418"; g.lineWidth = 3; g.beginPath(); g.moveTo(a.x, a.y - 9); g.lineTo(b.x, b.y - 9); g.stroke(); }
-      }
       continue;
     }
-    const lip = waterKindAt(x + 1, y) || waterKindAt(x, y + 1);
-    if (lip) column(g, x, y, 0, { z0: WZ - .05, sideL: t === T.SAND ? "#c8a86a" : "#7a5a32", sideR: t === T.SAND ? "#a88a50" : "#5a4022" });   // a little bank down to the water
+    const sand = t === T.SAND;
+    if (waterKindAt(x + 1, y) || waterKindAt(x, y + 1))                       // a little bank down to the water in front
+      column(g, x, y, 0, { z0: WZ - .06, sideL: sand ? "#c8a86a" : "#7a5a32", sideR: sand ? "#a88a50" : "#5a4022" });
     if (t === T.PATH) {
+      grassTop(g, x, y);                                                   // shows through the gaps in Broken Path
       if (TEX.brick) texTop(g, TEX.broken && hash2(x, y, 41) < .1 ? TEX.broken : TEX.brick, [0, 0, 64, 64], x, y);
       else polyFill(g, diamond(x, y), "#b89a70");
-    } else if (t === T.SAND) {
+    } else if (sand) {
       polyFill(g, diamond(x, y), "#e4cf94");
       for (let k = 0; k < 6; k++) { const p = iso(x + .15 + hash2(x, y, 30 + k) * .7, y + .15 + hash2(x, y, 40 + k) * .7); g.fillStyle = k % 2 ? "#d4bc7c" : "#f2e2b0"; g.fillRect(p.x - 1.5, p.y - 1, 3, 2); }
-    } else if (!lip && (waterKindAt(x - 1, y) || waterKindAt(x, y - 1) || waterKindAt(x - 1, y - 1))) grassTop(x, y);   // keep water behind from spilling onto the bank
+    } else grassTop(g, x, y);
     if (t === T.FLOWER) {
       const fc = ["#ffffff", "#ffe070", "#ff8ab0", "#b0a0ff"][Math.floor(hash2(x, y, 5) * 4)];
       for (let k = 0; k < 3; k++) { const p = iso(x + .25 + hash2(x, y, 30 + k) * .5, y + .25 + hash2(x, y, 40 + k) * .5); g.fillStyle = fc; g.beginPath(); g.arc(p.x, p.y, 2.4, 0, 7); g.fill(); g.fillStyle = "#ffb030"; g.fillRect(p.x - .8, p.y - .8, 1.6, 1.6); }
@@ -1685,6 +1682,31 @@ function isoChunk(cx, cy) {
   bgCache.set(key, R);
   while (bgCache.size > 12) bgCache.delete(bgCache.keys().next().value);
   return R;
+}
+// ---- Docks, the pier and bridges: wooden decks on pilings, drawn live above the water (sorted back to front)
+const DECK_Z = .14;
+function deckAcross(x, y) { return [T.DOCK, T.BRIDGE, T.PATH, T.SAND].includes(tileAt(x - 1, y)) || [T.DOCK, T.BRIDGE].includes(tileAt(x + 1, y)); }
+function drawDeckIso(x, y) {
+  const t = tileAt(x, y), across = deckAcross(x, y), g = ctx;
+  // pilings at the two front corners, from the waterline up to the deck
+  for (const [px, py] of [[x + .08, y + .92], [x + .92, y + .92], [x + .92, y + .08]]) {
+    if (across && px < x + .5 && py < y + .5) continue;
+    const a = iso(px, py, WZ - .05), b = iso(px, py, DECK_Z);
+    g.fillStyle = "#4a2c18"; g.fillRect(a.x - 2.5, b.y, 5, a.y - b.y);
+    g.fillStyle = "rgba(220,245,255,.6)"; g.fillRect(a.x - 4, a.y - 1, 8, 1.5);
+  }
+  column(g, x, y, DECK_Z, { z0: DECK_Z - .12, sideL: "#7a4a24", sideR: "#5a3418", color: "#b07a44" });
+  g.strokeStyle = "#7a4a24"; g.lineWidth = 1.4;                        // planks
+  for (let k = 1; k < 4; k++) {
+    const a = across ? iso(x + k / 4, y, DECK_Z) : iso(x, y + k / 4, DECK_Z), b = across ? iso(x + k / 4, y + 1, DECK_Z) : iso(x + 1, y + k / 4, DECK_Z);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+  }
+  g.strokeStyle = "rgba(255,230,180,.25)"; g.lineWidth = 1;
+  { const a = iso(x, y, DECK_Z), b = across ? iso(x + 1, y, DECK_Z) : iso(x, y + 1, DECK_Z); g.beginPath(); g.moveTo(a.x, a.y + .5); g.lineTo(b.x, b.y + .5); g.stroke(); }
+  if (t === T.BRIDGE) {                                                 // low kerbs along both edges of the bridge
+    g.strokeStyle = "#5a3418"; g.lineWidth = 3;
+    for (const e of [.06, .94]) { const a = across ? iso(x, y + e, DECK_Z + .08) : iso(x + e, y, DECK_Z + .08), b = across ? iso(x + 1, y + e, DECK_Z + .08) : iso(x + e, y + 1, DECK_Z + .08); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+  }
 }
 const drawIsoCanvas = R => {     // copy only the part of the ground that's on screen
   const x0 = Math.max(R.ox, cam.x0), y0 = Math.max(R.oy, cam.y0), x1 = Math.min(R.ox + R.cw, cam.x0 + cam.vw), y1 = Math.min(R.oy + R.chh, cam.y0 + cam.vh);
@@ -1728,7 +1750,8 @@ function poseFor(seat, now) {
   if (d.moving) return set.walk[Math.floor(walkAnim[seat] * 7) % 4];
   return set.idle[Math.floor(now / 700) % 2];
 }
-const feet = i => iso(disp[i].x, disp[i].y);
+const onDeck = (x, y) => { const t = tileAt(Math.floor(x), Math.floor(y)); return t === T.DOCK || t === T.BRIDGE; };
+const feet = i => iso(disp[i].x, disp[i].y, onDeck(disp[i].x, disp[i].y) ? DECK_Z : 0);
 function rodHand(seat) { const F = feet(seat), [sx] = gridToScreenDir(state.players[seat].dir); return { x: F.x + sx * 9, y: F.y - 27 }; }
 function rodTip(seat) {
   const H = rodHand(seat), [sx, sy] = gridToScreenDir(state.players[seat].dir);
@@ -1827,7 +1850,7 @@ function drawPet(i, now) {
   const q = petPos[i], frames = PET_ART[LOOKS.pet[cleanLook(state.players[i].look, i).pet || 0]];
   if (!q || !frames) return;
   const img = frames[q.moving > 0 ? Math.floor(now / 140) % frames.length : Math.floor(now / 600) % 2];
-  const P = iso(q.x, q.y), w = img.width / K * .75, h = img.height / K * .75, hop = Math.max(0, petHop[i] - now) / 600;
+  const P = iso(q.x, q.y, onDeck(q.x, q.y) ? DECK_Z : 0), w = img.width / K * .75, h = img.height / K * .75, hop = Math.max(0, petHop[i] - now) / 600;
   const fy = P.y - (hop > 0 ? Math.sin(hop * Math.PI * 2) * 14 : 0);
   ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(P.x, P.y, w * .32, 4, 0, 0, Math.PI * 2); ctx.fill();
   ctx.save();
@@ -1977,6 +2000,11 @@ function draw(now) {
     if (bx1 < cam.x0 || bx0 > cam.x0 + cam.vw || by1 < cam.y0 || by0 > cam.y0 + cam.vh) continue;   // off screen: don't even build it
     drawIsoCanvas(isoChunk(cx, cy));
   }
+  // docks, the pier and bridges, back to front
+  for (let sum = tx0 + ty0; sum <= tx1 + ty1; sum++) for (let x = tx0; x <= tx1; x++) {
+    const y = sum - x; if (y < ty0 || y > ty1) continue;
+    const t = tileAt(x, y); if ((t === T.DOCK || t === T.BRIDGE) && onScreen(x, y)) drawDeckIso(x, y);
+  }
   // water sparkle, jumping fish and hot spots
   const hn = hostNow();
   for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
@@ -2018,7 +2046,7 @@ function draw(now) {
     if (!seen(i)) continue;
     const d = disp[i];
     things.push({ k: d.x + d.y, draw: () => {
-      const F = iso(d.x, d.y);
+      const F = iso(d.x, d.y, onDeck(d.x, d.y) ? DECK_Z : 0);
       ctx.fillStyle = "#00000044"; ctx.beginPath(); ctx.ellipse(F.x, F.y - 1, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
       drawSprite(poseFor(i, now), F.x - 24, F.y - 57);
       drawRod(i);
