@@ -61,6 +61,9 @@ A co-op fishing game for 1–4 players, each on their own device. It's the siste
 - **Five rarities:** Common, ◆ Uncommon, ◆◆ Rare, ◆◆◆ Epic and ★ Legendary (12 common, 8 uncommon, 5 rare, 4 epic, 4 legendary).
   - The reel bar shows a fish's rarity as soon as you hook it.
   - Catches, the cooler and the journal are colour-coded by rarity.
+- **✨ Oooooo Shiny fish:** every real fish you land has a **1 in 500** chance of being shiny, in World 1 and on the Sky Island. It's called "Oooooo Shiny" plus the fish's name (for example "Oooooo Shiny Largemouth Bass"). It has its own colours and a sparkle, and gets a rainbow announcement for the whole lobby.
+  - A shiny sells for **5×** the most a normal one of that fish can fetch: a top-weight catch from the same tier of fishing hole, whatever the shiny's own weight.
+  - The journal counts your team's shinies for each species. Junk and treasure are never shiny.
   - Better rods, a Shiny Lure, Glow Bait at night and bubbling hot spots all make rarer fish more likely.
 - **Fishing level** goes from 1 to 10 and unlocks rarer fish.
 - **Bubbling hot spots** move every half hour and make fish bite faster and rarer fish more likely.
@@ -139,6 +142,7 @@ Type **EEEEE** in the join box and press Join. It opens the debug lobby, or join
 - **Gear and items:** set any rod or fishing level, add bait, Hourglass Charms and the biggest cooler, and unlock Cloud Island.
 - **🌍 New World 1:** generate a fresh World 1 for the debug lobby.
 - **🦝 Sal:** force Friday on or off, and **+3 🥪** sandwiches.
+- **✨ Shiny:** add a shiny of the chosen fish, or make your next catch shiny.
 - **Travel:** go to World 1, Cloud Island, any Sky Island floor or straight to the pool room. You can also clear the floor or catch its special fish.
 - **Time:** switch between day, night and the real clock.
 

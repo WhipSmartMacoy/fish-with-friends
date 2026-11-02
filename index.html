@@ -132,6 +132,14 @@
   .dex .cell b { display: block; font-size: .8rem; }
   .dex .cell { box-shadow: inset 0 0 0 2px var(--rc, transparent); }
   .dex .cell.unseen { --rc: transparent !important; }
+  .shiny-ic { position: relative; display: inline-block; }
+  .shiny-ic img, .shiny-ic .em { filter: hue-rotate(150deg) saturate(1.9) brightness(1.18) drop-shadow(0 0 3px #fff6a0); }
+  .shiny-ic::after { content: "✨"; position: absolute; right: -8px; top: -8px; font-size: 14px; animation: twinkle 1.1s ease-in-out infinite; }
+  @keyframes twinkle { 0%, 100% { transform: scale(.7) rotate(0); opacity: .6; } 50% { transform: scale(1.15) rotate(20deg); opacity: 1; } }
+  .shiny-tag { --rc: #fff27a; background: linear-gradient(90deg, #ff7ad0aa, #7ad8ffaa, #9aff8aaa, #fff27aaa); color: #fff !important; text-shadow: 0 0 3px #0008 !important; }
+  .shiny-count { font-size: .72rem; font-weight: bold; color: #fff27a; }
+  .toast.shiny { border-color: #fff27a !important; color: #fff6b0 !important; background: linear-gradient(110deg, #3a1a5aee, #1a3a6aee 35%, #1a5a4aee 65%, #5a4a1aee); background-size: 300% 100%; animation: shinybg 2.4s linear infinite; box-shadow: 0 0 18px #fff27a88; }
+  @keyframes shinybg { from { background-position: 0 0; } to { background-position: 300% 0; } }
   .rtag { display: inline-block; font-size: .68rem; font-weight: bold; padding: 0 6px; border-radius: 6px; background: #0008; color: var(--rc); border: 1px solid var(--rc); text-shadow: none; vertical-align: middle; }
   .mrow.rar { box-shadow: inset 3px 0 0 var(--rc); }
   .rodic { width: 20px; height: 20px; image-rendering: pixelated; vertical-align: middle; }
@@ -877,7 +885,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-2015";
+const BUILD = "2026.11.02-2240";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -1653,10 +1661,12 @@ function debugAction(seat, a) {
       const f = CATCH[a.id]; if (!f) return null;
       const kg = +(f.kg[0] + (f.kg[1] - f.kg[0]) * (a.big ? 1 : Math.random())).toFixed(2);
       if (p.items.length >= COOLERS[p.cooler].size) return { text: "Cooler full.", ok: false, seat, private: true };
-      p.items.push({ id: f.id, kg });
-      if (!f.junk) { const d = state.dex[f.id] || (state.dex[f.id] = { n: 0, best: 0, by: p.name }); d.n++; d.best = Math.max(d.best, kg); }
-      return say(`+${f.name} (${kg} kg)`);
+      const sh = a.shiny && !f.junk;
+      p.items.push({ id: f.id, kg, ...(sh ? { sh: 1 } : {}) });
+      if (!f.junk) { const d = state.dex[f.id] || (state.dex[f.id] = { n: 0, best: 0, by: p.name }); d.n++; d.best = Math.max(d.best, kg); if (sh) d.sh = (d.sh || 0) + 1; }
+      return say(`+${sh ? shinyName(f) : f.name} (${kg} kg)`);
     }
+    case "nextshiny": p.nextShiny = true; return say("✨ Your next fish will be Oooooo Shiny");
     case "dex": {
       const list = a.set === "all" ? FISH : a.set === "w1" ? W1_REQUIRED : FISH.filter(f => f.water.includes(a.set));
       for (const f of list) if (!state.dex[f.id]) state.dex[f.id] = { n: 1, best: f.kg[1], by: p.name };
@@ -1887,9 +1897,15 @@ function sizeLabel(f, kg) {
   const t = (kg - f.kg[0]) / (f.kg[1] - f.kg[0] || 1);
   return t > .9 ? "⭐ Trophy" : t > .65 ? "Big" : t < .2 ? "Small" : "";
 }
+// ✨ "Oooooo Shiny" fish: any real catch has a 1 in 500 chance of being shiny.
+// A shiny sells for 5× the most a normal one of that fish could fetch (a top-weight catch from the same tier of hole).
+const SHINY_ODDS = 500, SHINY_MULT = 5;
+const shinyName = f => `Oooooo Shiny ${f.name}`;
+const itemName = it => { const f = CATCH[it.id]; return f ? (it.sh ? shinyName(f) : f.name) : "?"; };
 function priceOf(item) {
   const f = CATCH[item.id];
   if (!f) return 0;
+  if (item.sh) return SHINY_MULT * Math.max(1, Math.round(f.price * 1.4 * (item.m || 1)));
   const t = clamp((item.kg - f.kg[0]) / (f.kg[1] - f.kg[0] || 1), 0, 1.2);
   return Math.max(1, Math.round(f.price * (0.7 + 0.7 * t) * (item.m || 1)));
 }
@@ -2036,12 +2052,12 @@ function applyActionCore(seat, a) {
   if (a.type === "sell") {
     const list = a.all ? p.items.map((_, i) => i) : [a.i | 0];
     let gold = 0, n = 0, last = "";
-    for (const i of list.sort((x, y) => y - x)) { const it = p.items[i]; if (!it) continue; gold += priceOf(it); n++; last = CATCH[it.id].name; p.items.splice(i, 1); }
+    for (const i of list.sort((x, y) => y - x)) { const it = p.items[i]; if (!it) continue; gold += priceOf(it); n++; last = itemName(it); p.items.splice(i, 1); }
     if (!n) return null;
     const party = onlineCount() - 1, bonus = Math.round(gold * party * .05);   // +5% for every extra angler online
     gold += bonus;
     state.team.gold += gold; state.team.earned += gold;
-    const text = (n === 1 ? `${p.name} sold a ${last} for 💰${gold}` : `${p.name} sold ${n} catches for 💰${gold}`) + (bonus ? ` (party bonus +${bonus})` : "") + ".";
+    const text = (n === 1 ? `${p.name} sold ${/^[aeiou]/i.test(last) ? "an" : "a"} ${last} for 💰${gold}` : `${p.name} sold ${n} catches for 💰${gold}`) + (bonus ? ` (party bonus +${bonus})` : "") + ".";
     addLog(text, true);
     return { text, ok: true, seat, sfx: "coin" };
   }
@@ -2103,7 +2119,7 @@ function applyActionCore(seat, a) {
   if (a.type === "bait") { if (a.id === "none" || BAITS[a.id]) p.useBait = a.id; return { quiet: true, seat }; }
   if (["ferry", "sail", "leave", "portal", "chest"].includes(a.type)) return travelAction(seat, a, now);
   if (a.type === "debug") return debugAction(seat, a);
-  if (a.type === "release") { const it = p.items[a.i | 0]; if (!it) return null; p.items.splice(a.i | 0, 1); return { text: `Released the ${CATCH[it.id].name}. 🌊`, ok: true, seat, private: true }; }
+  if (a.type === "release") { const it = p.items[a.i | 0]; if (!it) return null; p.items.splice(a.i | 0, 1); return { text: `Released the ${itemName(it)}. 🌊`, ok: true, seat, private: true }; }
   return null;
 }
 
@@ -2120,7 +2136,8 @@ function landCatch(seat, ok) {
   const skyNote = (!f.junk && L.floor) ? skyProgress(f) : "";
   if (p.items.length >= COOLERS[p.cooler].size) return { text: "Your cooler is full! The catch flopped back in." + (skyNote ? " " + skyNote : " Sell at the 🐟 Fish Market."), ok: !!skyNote, seat, fx: { x: L.x, y: L.y, text: "🧊 full", color: "#ff9a8a" }, sfx: skyNote.includes("cleared") ? "legend" : undefined };
   const tm = tierMult(L.tier || 1);
-  p.items.push({ id: f.id, kg: L.kg, m: +tm.toFixed(2), t: L.tier || 1 });
+  const shiny = !f.junk && (p.nextShiny || Math.random() < 1 / SHINY_ODDS); if (shiny) p.nextShiny = false;
+  p.items.push({ id: f.id, kg: L.kg, m: +tm.toFixed(2), t: L.tier || 1, ...(shiny ? { sh: 1 } : {}) });
   const before = levelOf(p.xp);
   const xp = f.junk ? 1 : Math.round((2 + f.d * 3 + (f.legend ? 60 : 0)) * tm);
   p.xp += xp;
@@ -2130,10 +2147,12 @@ function landCatch(seat, ok) {
     const d = state.dex[f.id] || (state.dex[f.id] = { n: 0, best: 0, by: p.name });
     const first = d.n === 0, record = L.kg > d.best;
     d.n++; if (record) { d.best = L.kg; d.by = p.name; }
+    if (shiny) { d.sh = (d.sh || 0) + 1; state.team.shinies = (state.team.shinies || 0) + 1; }
     if (f.legend) state.team.legends++;
     if (!p.best || L.kg * f.price > p.best.score) p.best = { id: f.id, kg: L.kg, score: L.kg * f.price };
     const sz = sizeLabel(f, L.kg), rr = RARITY[f.rarity];
     let text = `${p.name} caught ${f.legend ? "the LEGENDARY " : f.rarity ? `${f.rarity === 1 ? "an" : "a"} ${rr.gem} ${rr.name.toUpperCase()} ` : "a "}${L.tier > 1 ? `T${L.tier} ` : ""}${sz ? sz.toLowerCase() + " " : ""}${f.name} (${L.kg} kg)!`;
+    if (shiny) text = `✨ ${p.name} caught an OOOOOO SHINY ${f.name.toUpperCase()}! ✨ (${L.kg} kg · 1 in ${SHINY_ODDS} · worth 💰${priceOf(p.items[p.items.length - 1]).toLocaleString()})`;
     if (first) text += " 📖 New in the journal!";
     else if (record) text += " 🏆 New record!";
     if (up) text += ` 🎣 Fishing level ${up}!`;
@@ -2143,6 +2162,7 @@ function landCatch(seat, ok) {
     }
     if (skyNote) text += " " + skyNote;
     addLog(text, true);
+    if (shiny) return { text, ok: true, seat, sfx: "legend", fx: { x: L.x, y: L.y, text: `✨ Oooooo Shiny! +${xp} xp`, color: "#fff27a" }, petHop: true, levelUp: up, caughtId: f.id, rarity: f.rarity, shiny: true };
     return { text, ok: true, seat, sfx: f.rarity >= 3 || skyNote.includes("cleared") ? "legend" : f.rarity === 2 ? "rare" : "catch", fx: { x: L.x, y: L.y, text: f.rarity ? `${rr.name}! +${xp} xp` : `+${xp} xp`, color: rr.col }, petHop: true, levelUp: up, caughtId: f.id, rarity: f.rarity };
   }
   return { text: `${p.name} reeled in… ${f.shape} ${f.name.toLowerCase()}. Ew.`, ok: true, seat, neutral: true, fx: { x: L.x, y: L.y, text: f.shape, color: "#ffffff" } };
@@ -2456,9 +2476,10 @@ function fishArt(id) {
   return fishArtCache[id];
 }
 // HTML for a catch's picture (pixel fish or emoji)
-function fishIcon(id, cls = "") {
+function fishIcon(id, cls = "", shiny = false) {
   const f = CATCH[id], a = fishArt(id);
-  return a ? `<img class="${cls}" src="${a.url}" alt="">` : `<span class="em ${cls}">${f ? f.shape : "?"}</span>`;
+  const inner = a ? `<img class="${cls}" src="${a.url}" alt="">` : `<span class="em ${cls}">${f ? f.shape : "?"}</span>`;
+  return shiny ? `<span class="shiny-ic">${inner}</span>` : inner;
 }
 
 // ================= Isometric view (same projection as Mine with friends) =================
@@ -3606,7 +3627,8 @@ function toast(text, cls = "", ms = 3500, color = "") {
 function onResult(r) {
   if (r && !r.quiet) {
     const mine = r.seat === net.seat;
-    if (!r.private || mine) toast(r.text, r.neutral ? "" : r.ok ? "ok" : "bad", r.levelUp || r.rarity >= 3 ? 6000 : 4000, r.rarity ? RARITY[r.rarity].col : "");
+    if (r.shiny) toast(r.text, "ok shiny", 8000, "#fff27a");
+    else if (!r.private || mine) toast(r.text, r.neutral ? "" : r.ok ? "ok" : "bad", r.levelUp || r.rarity >= 3 ? 6000 : 4000, r.rarity ? RARITY[r.rarity].col : "");
     if (mine && r.sfx) sfx(r.sfx);
     if (mine && !r.ok && !r.sfx) sfx("bad");
     if (!mine && (r.sfx === "legend" || r.sfx === "rare")) sfx(r.sfx);
@@ -3655,7 +3677,7 @@ function renderDebug(title, note, body) {
     <div class="opt-title">Gold</div>
     <div class="setrow">${B("+1,000", { what: "gold", n: 1000 })}${B("+10,000", { what: "gold", n: 10000 })}${B("+100,000", { what: "gold", n: 100000 })}<input id="dbg-gold" class="field" type="number" value="500" style="width:100px;padding:6px">${B("Give", { what: "gold" })}</div>
     <div class="opt-title">Fish</div>
-    <div class="setrow"><select id="dbg-fish" class="field" style="flex:1;min-width:180px;padding:6px">${opts(FISH)}${opts(JUNK)}</select>${B("Add to cooler", { what: "fish" })}${B("Add trophy", { what: "fish", big: true })}</div>
+    <div class="setrow"><select id="dbg-fish" class="field" style="flex:1;min-width:180px;padding:6px">${opts(FISH)}${opts(JUNK)}</select>${B("Add to cooler", { what: "fish" })}${B("Add trophy", { what: "fish", big: true })}${B("✨ Add shiny", { what: "fish", shiny: true })}${B("✨ Next catch shiny", { what: "nextshiny" })}</div>
     <div class="setrow">${B("📖 All World 1 fish (unlocks ferry)", { what: "dex", set: "w1" })}${B("📖 Every fish", { what: "dex", set: "all" })}${B("📖 Sky fish", { what: "dex", set: "sky" })}${B("🧹 Clear journal", { what: "cleardex" })}${B("🗑️ Empty cooler", { what: "empty" })}</div>
     <div class="opt-title">Rods & level</div>
     <div class="setrow">${RODS.map((r, i) => B(`${rodIcon(i)} ${r.name.replace(" Rod", "")}`, { what: "rod", i }, me.rod === i ? "btn-gold" : "")).join("")}</div>
@@ -3769,8 +3791,8 @@ function renderMenuInner() {
     if (selling && me.items.length) h += `<button class="btn-gold" data-sellall style="width:100%;margin-bottom:8px">Sell everything for 💰${total}</button>`;
     me.items.forEach((it, i) => {
       const f = CATCH[it.id], sz = f.junk ? "" : sizeLabel(f, it.kg), rr = RARITY[f.rarity];
-      h += row(fishIcon(it.id), `${f.name} ${f.junk ? "" : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.t > 1 ? `T${it.t} · ` : ""}${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
-        selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`, f.junk ? "" : rr.col);
+      h += row(fishIcon(it.id, "", it.sh), `${itemName(it)} ${f.junk ? "" : it.sh ? `<span class="rtag shiny-tag">✨ SHINY</span>` : `<span class="rtag">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`}`, `${it.t > 1 ? `T${it.t} · ` : ""}${it.kg} kg${sz ? " · " + sz : ""} · 💰${priceOf(it)}`,
+        selling ? `<button data-sell="${i}">Sell</button>` : `<button data-release="${i}">Release</button>`, f.junk ? "" : it.sh ? "#fff27a" : rr.col);
     });
     if (!me.items.length) h += `<div class="mrow dim"><div class="ic">🎣</div><div class="txt"><b>Empty</b><small>Go catch something! The pond is easy; the ocean and deep water hold the big ones. Every water has its own fish.</small></div></div>`;
     body.innerHTML = h;
@@ -3808,7 +3830,7 @@ function renderMenuInner() {
         <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>
         <div style="color:var(--muted)">${d ? where : f.water[0] === "sky" ? "Sky Island floors" : `Lv ${f.lvl}+ · ${f.water.map(w => WATER_LABEL[w]).join(", ")}`}</div>
         ${f.time ? `<div style="font-size:.7rem;color:${f.time === "night" ? "#b8c0ff" : "#ffe08a"}">${f.time === "night" ? "🌙 Night only" : "☀️ Day only"}${(f.time === "night") !== nightNow ? " · not now" : " · biting now"}</div>` : `<div style="font-size:.7rem;color:var(--muted)">🕐 Any time</div>`}
-        ${d ? `<div>×${d.n} · 🏆 ${d.best} kg</div>` : ""}</div>`;
+        ${d ? `<div>×${d.n} · 🏆 ${d.best} kg</div>` : ""}${d && d.sh ? `<div class="shiny-count">✨ ${d.sh} Oooooo Shiny</div>` : ""}</div>`;
     }
     body.innerHTML = h + "</div>";
   }
