@@ -244,7 +244,7 @@
 
   /* ===== Immersive phone layout: the game fills the screen, a slim chat bar at the bottom, the Dynamic Island strip kept clear.
      Floating joystick wherever you touch; action buttons in a corner (left or right, chosen in Settings). ===== */
-  :root { --chatbar: 48px; --joy-op: .9; }
+  :root { --chatbar: 48px; --joy-op: .9; --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); }
   .act-cluster { display: none; }
   .fjoy { display: none; }
   .cool-btn { width: 56px; height: 56px; border-radius: 50%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; font-size: .7rem; }
@@ -252,10 +252,10 @@
   html.immersive body.ingame { background: #071526; }
   html.immersive .app { padding: 0 !important; gap: 0 !important; }
   html.immersive .playarea { display: block !important; }
-  html.immersive .stage { position: fixed !important; left: 0; right: 0; top: env(safe-area-inset-top); bottom: calc(var(--chatbar) + env(safe-area-inset-bottom));
+  html.immersive .stage { position: fixed !important; left: 0; right: 0; top: var(--sat); bottom: calc(var(--chatbar) + var(--sab));
                           width: auto !important; height: auto !important; aspect-ratio: auto !important; border: 0; border-radius: 0;
                           justify-self: stretch !important; align-self: stretch !important; margin: 0 !important; }
-  html.immersive .topbar, html.immersive .hudbar { position: fixed; z-index: 15; top: calc(env(safe-area-inset-top) + 6px); background: rgba(8, 26, 52, .58);
+  html.immersive .topbar, html.immersive .hudbar { position: fixed; z-index: 15; top: calc(var(--sat) + 6px); background: rgba(8, 26, 52, .58);
                           border: 1px solid rgba(244, 236, 208, .45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
   html.immersive .topbar { right: 6px; left: auto; padding: 3px 4px 3px 10px; gap: 6px; border-radius: 20px; font-size: .8rem; max-width: 46vw; }
   html.immersive .topbar > span:first-child, html.immersive #invite, html.immersive #zoom-btn, html.immersive #panel-btn, html.immersive #leave { display: none !important; }
@@ -270,8 +270,8 @@
   html.immersive .minimap { top: 52px; right: 6px; width: 74px; height: 74px; }
   html.immersive .toast, html.immersive .toast.top { top: 60px; bottom: auto; }
   html.immersive .menu { top: 50px; }
-  html.immersive .chat { position: fixed; z-index: 14; left: 0; right: 0; bottom: 0; height: calc(var(--chatbar) + env(safe-area-inset-bottom)) !important;
-                         padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) !important; border: 0; border-top: 1px solid rgba(244, 236, 208, .45); border-radius: 0;
+  html.immersive .chat { position: fixed; z-index: 14; left: 0; right: 0; bottom: 0; height: calc(var(--chatbar) + var(--sab)) !important;
+                         padding: 6px 8px calc(6px + var(--sab)) !important; border: 0; border-top: 1px solid rgba(244, 236, 208, .45); border-radius: 0;
                          flex-direction: row; align-items: center; gap: 8px; background: rgba(7, 21, 38, .94); }
   html.immersive .chat-log { flex: 0 1 40%; max-height: 34px !important; min-height: 0 !important; font-size: .72rem !important; line-height: 1.2 !important; overflow: hidden; }
   html.immersive .chat-form { flex: 1; min-width: 0; }
@@ -279,7 +279,7 @@
   html.immersive .chat-form button { padding: 6px 10px !important; }
   html.immersive .joy { display: none !important; }
   html.immersive .act-cluster.touch { position: fixed; z-index: 13; display: flex !important; flex-direction: row; align-items: flex-end; gap: 6px;
-                         bottom: calc(var(--chatbar) + env(safe-area-inset-bottom) + 14px); right: 14px; pointer-events: none; }
+                         bottom: calc(var(--chatbar) + var(--sab) + 14px); right: 14px; pointer-events: none; }
   html.immersive.act-left .act-cluster.touch { right: auto; left: 14px; flex-direction: row-reverse; }
   html.immersive .act-col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   html.immersive .act-col button { pointer-events: auto; touch-action: none; }
@@ -294,6 +294,11 @@
                background: linear-gradient(180deg, #ffe890, #f0b840); border: 3px solid #fff4d0; box-shadow: 0 3px 0 #061528; }
   .setrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .setrow input[type=range] { flex: 1; min-width: 140px; accent-color: #ffd860; }
+  /* keep the lobby, creator and stats panel clear of the Dynamic Island and the home bar (full-screen Home Screen mode) */
+  header { padding-top: calc(14px + var(--sat)); }
+  main.screens { padding-bottom: calc(10px + var(--sab)); }
+  .side.open { top: calc(8px + var(--sat)) !important; bottom: calc(8px + var(--sab)) !important; }
+  html.immersive .side { top: calc(8px + var(--sat)) !important; bottom: calc(8px + var(--sab)) !important; }
 </style>
 </head>
 <body>
@@ -833,7 +838,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1500";
+const BUILD = "2026.11.02-1515";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -2258,8 +2263,12 @@ function drawReel(now, sw, sh) {
   const hint = `${isTouch ? "Tap" : "Space"} in the green · avoid the red`;
   let hfs = 12; ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`;
   const hw = ctx.measureText(hint).width; if (hw > sw * .86) { hfs = Math.max(9, Math.floor(hfs * sw * .86 / hw)); ctx.font = `bold ${hfs}px "Trebuchet MS", system-ui`; }
-  ctx.fillStyle = "#e4f4ff"; ctx.lineWidth = 2; ctx.strokeText(hint, cx, by + 20); ctx.fillText(hint, cx, by + 20);
-  ctx.font = `bold 9px "Trebuchet MS", system-ui`; ctx.textAlign = "right"; ctx.fillStyle = "#bfe0f4"; ctx.strokeText("strain", bx - 4, by + 5); ctx.fillText("strain", bx - 4, by + 5); ctx.textAlign = "center";
+  const tw = ctx.measureText(hint).width + 16;
+  ctx.fillStyle = "rgba(6,20,40,.82)"; ctx.beginPath(); ctx.roundRect(cx - tw / 2, by + 12, tw, hfs + 9, 8); ctx.fill();
+  ctx.fillStyle = "#e4f4ff"; ctx.fillText(hint, cx, by + 16.5 + hfs / 2);
+  ctx.font = `bold 10px "Trebuchet MS", system-ui`; ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(6,20,40,.82)"; ctx.beginPath(); ctx.roundRect(bx - 44, by - 2, 40, 14, 6); ctx.fill();
+  ctx.fillStyle = "#bfe0f4"; ctx.fillText("strain", bx - 8, by + 5); ctx.textAlign = "center";
   // feedback pops
   for (const fx of R.fx) {
     const t = (R.t - fx.t0) / .9;
@@ -2656,7 +2665,7 @@ function renderMenu() {
       const btn = i <= me.rod ? `<button disabled>${i === me.rod ? "Equipped" : "Owned"}</button>`
         : i === me.rod + 1 ? (tooLow ? `<button disabled>🔒 Lv ${r.lvl}</button>` : `<button class="btn-gold" data-buy="rod" data-i="${i}" ${gold < r.price ? "disabled" : ""}>💰${r.price.toLocaleString()}</button>`)
         : `<button disabled>🔒 ${r.price.toLocaleString()}</button>`;
-      const stats = `🎯 Reach ${r.reach} · 🍀 Luck +${rodLuck(r)}% · 🎛️ Control +${rodControl(r)}%${r.lvl > 1 ? ` · Lv ${r.lvl}+` : ""}`;
+      const stats = `🎯 Reach ${r.reach} · 🍀 Luck +${rodLuck(r)}% · 💪 Control +${rodControl(r)}%${r.lvl > 1 ? ` · Lv ${r.lvl}+` : ""}`;
       h += row(rodIcon(i, ""), `${r.name} <span class="rtag" style="--rc:${rr.col}">${rr.gem ? rr.gem + " " : ""}${rr.name}</span>`, stats, btn, rr.col);
     });
     h += `<div class="opt-title" style="margin-top:10px">Bait (packs of 10)</div>`;
