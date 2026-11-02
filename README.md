@@ -2,9 +2,16 @@
 
 A co-op fishing game for two players, each on their own device. It's the sister game to [Mine with friends](https://github.com/WhipSmartMacoy/mine-with-friends) but all about fishing.
 
-> 🚧 **Work in progress.** The playable `index.html` is still being built. The game code so far is in `src/`.
+**Play:** https://whipsmartmacoy.github.io/fish-with-friends/ (once GitHub Pages is on — see *Hosting*)
 
-## Planned gameplay
+## Controls
+- **Move:** WASD / arrow keys, or the joystick on phones.
+- **Cast:** face the water and **hold Space** (or the 🎣 button). The power bar swings back and forth. Let go to cast; the dashed square shows where the bobber will land.
+- **Hook:** when the bobber dips and a **!** pops up, tap Space or the **HOOK!** button fast.
+- **Reel:** **hold** to raise the green bar and let go to let it sink. Keep the fish inside the bar until the yellow meter fills.
+- **Shops:** walk up to a shop and press Space. **C** opens your cooler, **J** the journal and **Z** changes the zoom.
+
+## Gameplay
 - **Lobbies like Mine with friends:** create a lobby, share the 5-character code, and your friend joins. Players connect browser-to-browser with [PeerJS](https://peerjs.com), so you don't need a server or an account.
 - **Your angler and pet:** the same character creator as Mine with friends, plus a **dog or cat** that follows you and sits between the joystick and the Cast button on phones.
   - 🐶 **Dog:** barks when a fish bites and gives you longer to hook it.
