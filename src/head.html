@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f2a44">
+<title>Fish with friends</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root {
+    --bg: #0f2440; --panel: linear-gradient(180deg, #3f8ac0 0%, #2a5f94 55%, #224f80 100%); --panel2: rgba(8, 26, 52, 0.45); --line: #f4ecd0;
+    --text: #ffffff; --muted: #bfe0f4; --gold: #ffd860; --good: #9af08a; --bad: #ff9a8a;
+    --p1: #8fd0ff; --p2: #ffb08a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Trebuchet MS", system-ui, sans-serif; color: var(--text);
+    background: radial-gradient(ellipse at top, #2a5a86, var(--bg) 70%); min-height: 100vh; text-shadow: 1px 1px 0 #08203a;
+  }
+  body.ingame { overflow: hidden; height: 100vh; height: 100dvh; }
+  body.ingame header { display: none; }
+  header { text-align: center; padding: 14px 12px 4px; }
+  h1 { margin: 0; font-size: 2rem; letter-spacing: 1px; color: var(--gold); text-shadow: 2px 2px 0 #8a4a10, 4px 4px 0 #08203a; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+  main.screens { max-width: 1000px; margin: 0 auto; padding: 10px; }
+  .hidden { display: none !important; }
+  .card { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 12px;
+          box-shadow: inset 0 0 0 2px #0e2a4a, 0 3px 0 #061528; }
+  .card h3 { margin: 0 0 8px; }
+  button { font-family: inherit; cursor: pointer; border-radius: 9px; border: 2px solid #f4ecd0;
+           background: linear-gradient(180deg, #5aa6d8, #2e6a9e); color: #fff; padding: 7px 12px; font-weight: bold;
+           text-shadow: 1px 1px 0 #08203a; box-shadow: inset 0 0 0 1px #0e2a4a; }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-gold { background: linear-gradient(180deg, #ffe890, #f0b840); color: #3a2208; border-color: #fff4d0; text-shadow: none; }
+  input.field { font-family: inherit; font-size: 1rem; padding: 9px 10px; border-radius: 9px; border: 2px solid var(--line);
+                background: #0e2a4a; color: var(--text); width: 100%; }
+
+  /* Lobby */
+  .lobby { max-width: 520px; margin: 20px auto; }
+  .lobby h2 { margin: 0 0 12px; }
+  .lobby label { display: block; color: var(--muted); font-size: .85rem; margin: 10px 0 4px; }
+  .lobby .row { display: flex; gap: 8px; }
+  .lobby .row button { white-space: nowrap; }
+  .or { text-align: center; color: var(--muted); margin: 14px 0 4px; font-size: .85rem; }
+  .code-input { text-transform: uppercase; letter-spacing: 4px; font-weight: bold; }
+  .lobby-msg { margin-top: 12px; min-height: 22px; text-align: center; }
+  .lobby-msg.bad { color: var(--bad); }
+  .recent { margin-top: 12px; }
+  .rroom { display: flex; align-items: center; gap: 8px; background: var(--panel2); border-radius: 12px; padding: 8px 10px; margin-top: 6px; }
+  .rroom .rcode { font-weight: bold; color: var(--gold); letter-spacing: 2px; font-size: 1.1rem; min-width: 70px; }
+  .rroom .rinfo { flex: 1; min-width: 0; font-size: .82rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rroom button { font-size: .85rem; padding: 6px 12px; }
+  .rroom .rdel { padding: 4px 9px; background: transparent; box-shadow: none; }
+  .recent .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 6px; }
+  .me-bar { display: flex; align-items: center; gap: 10px; background: var(--panel2); border-radius: 14px; padding: 8px 10px; margin-bottom: 4px; }
+  #me-preview { width: 48px; height: 48px; image-rendering: pixelated; background: #6cbf4f; border-radius: 9px; border: 2px solid #f4ecd0; }
+  .me-bar .grow { flex: 1; min-width: 0; }
+
+  /* Character creator */
+  .creator { max-width: 760px; margin: 16px auto; }
+  .creator h2 { margin: 0 0 10px; }
+  .creator-grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  .preview-box { display: flex; flex-direction: column; gap: 8px; align-items: center; position: sticky; top: 8px; }
+  #preview { width: 300px; height: 150px; image-rendering: pixelated; border-radius: 9px; border: 2px solid #f4ecd0; background: #6cbf4f; }
+  .opt { margin-top: 10px; }
+  .opt-title { color: var(--muted); font-size: .8rem; text-transform: uppercase; margin-bottom: 4px; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+  .choices button.style { font-size: .82rem; padding: 5px 10px; }
+  .choices button.style.on { background: var(--gold); color: #2a1d05; border-color: #b68a22; text-shadow: none; }
+  .swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 3px solid #0e2a4a; box-shadow: none; }
+  .swatch.on { outline: 3px solid var(--gold); outline-offset: 1px; }
+  .pet-perk { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+  .done-btn { width: 100%; margin-top: 16px; padding: 11px; font-size: 1.05rem; }
+  @media (max-width: 640px) { .creator-grid { grid-template-columns: 1fr; } #preview { width: 100%; height: auto; aspect-ratio: 2 / 1; } .preview-box { position: static; } }
+
+  /* Game screen */
+  .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding: 8px; gap: 6px;
+         padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .topbar, .hudbar { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 5px 10px; }
+  .topbar { font-size: .92rem; }
+  .code { font-weight: bold; color: var(--gold); letter-spacing: 3px; font-size: 1.15rem; }
+  .conn { color: var(--muted); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conn.on { color: var(--good); }
+  .topbar button { font-size: .85rem; padding: 5px 10px; }
+  .hudbar { font-size: .95rem; justify-content: space-between; flex-wrap: wrap; row-gap: 4px; }
+  .hud-chip { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .hud-chip b { color: var(--gold); font-size: 1.05rem; }
+  .xpbar { width: 70px; height: 8px; border-radius: 4px; background: #0e2a4a; border: 1px solid #f4ecd088; overflow: hidden; }
+  .xpbar i { display: block; height: 100%; background: linear-gradient(90deg, #7ae0ff, #4ab0f0); }
+  .bag-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; padding: 4px 8px; font-size: .78rem; }
+  .bag-btn span { font-size: 1.2rem; }
+  .playarea { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr auto;
+              grid-template-areas: "stage side" "chat side"; gap: 8px; }
+  .stage { grid-area: stage; position: relative; min-height: 0; min-width: 0; border: 2px solid var(--line); border-radius: 12px; overflow: hidden; background: #2a5a2a; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .minimap { position: absolute; top: 8px; right: 8px; width: 96px; height: 96px; border: 2px solid var(--line); border-radius: 8px; image-rendering: pixelated; background: #0e2a4a; }
+  .toast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(8, 26, 52, .88); border: 2px solid var(--line);
+           border-radius: 10px; padding: 6px 12px; font-size: .92rem; max-width: 90%; text-align: center; transition: opacity .4s; pointer-events: none; }
+  .toast.ok { border-color: var(--good); } .toast.bad { border-color: var(--bad); }
+  .toast.fade { opacity: 0; }
+  .menu { position: absolute; inset: 6px; z-index: 10; background: rgba(10, 30, 56, .96); border: 2px solid var(--line); border-radius: 12px;
+          display: flex; flex-direction: column; padding: 10px; touch-action: pan-y; }
+  .menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .menu-head h3 { margin: 0; }
+  .menu-note { color: var(--muted); font-size: .85rem; margin: 4px 0 8px; }
+  #menu-body { overflow-y: auto; flex: 1; min-height: 0; }
+  .mrow { display: flex; align-items: center; gap: 10px; background: var(--panel2); border-radius: 10px; padding: 7px 9px; margin-bottom: 6px; }
+  .mrow .ic { font-size: 1.6rem; width: 52px; text-align: center; flex: none; display: flex; justify-content: center; }
+  .mrow .ic img { width: 48px; height: 30px; image-rendering: pixelated; object-fit: contain; }
+  .mrow .txt { flex: 1; min-width: 0; }
+  .mrow .txt small { display: block; color: var(--muted); font-size: .78rem; }
+  .mrow button { white-space: nowrap; font-size: .85rem; }
+  .mrow.dim { opacity: .7; }
+  .tabs { display: flex; gap: 6px; margin: 4px 0 8px; flex-wrap: wrap; }
+  .tabs button { font-size: .82rem; padding: 5px 10px; }
+  .tabs button.on { background: var(--gold); color: #2a1d05; text-shadow: none; }
+  .dex { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+  .dex .cell { background: var(--panel2); border-radius: 10px; padding: 6px; text-align: center; font-size: .76rem; }
+  .dex .cell img { width: 64px; height: 40px; image-rendering: pixelated; object-fit: contain; }
+  .dex .cell .em { font-size: 1.8rem; height: 40px; line-height: 40px; }
+  .dex .cell.unseen img, .dex .cell.unseen .em { filter: brightness(0) opacity(.45); }
+  .dex .cell b { display: block; font-size: .8rem; }
+  .dex .cell.leg { box-shadow: inset 0 0 0 2px #ffd86088; }
+  .chat { grid-area: chat; display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 6px; min-height: 0; }
+  .chat-log { font-size: .88rem; max-height: 72px; overflow-y: auto; min-height: 20px; }
+  .chat-log .who0 { color: var(--p1); } .chat-log .who1 { color: var(--p2); }
+  .chat-form { display: flex; gap: 6px; }
+  .chat-form input { flex: 1; min-width: 0; font-family: inherit; font-size: 16px; padding: 6px 9px; border-radius: 8px; border: 2px solid var(--line); background: #0e2a4a; color: #fff; }
+  .side { grid-area: side; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+  .side-head { display: none; justify-content: space-between; align-items: center; }
+  .player.p1 { border-color: var(--p1); } .player.p2 { border-color: var(--p2); }
+  .player h3 { margin: 0 0 4px; font-size: 1rem; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; font-size: .82rem; }
+  .stats div { background: var(--panel2); border-radius: 7px; padding: 3px 7px; }
+  .stats b { color: var(--gold); }
+  .milestones { font-size: .8rem; margin-top: 6px; }
+  .milestones div { padding: 2px 0; color: var(--muted); }
+  .milestones div.done { color: var(--good); }
+  .log { font-size: .8rem; max-height: 200px; overflow-y: auto; }
+  .log div { padding: 3px 0; border-bottom: 1px solid #ffffff10; }
+  .log div.ok { color: var(--good); }
+  .side-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .side-foot button { font-size: .75rem; padding: 4px 9px; }
+  .keys { font-size: .78rem; color: var(--muted); line-height: 1.6; }
+  kbd { background: #00000055; border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; font-family: inherit; }
+
+  /* Touch controls (from Mine with friends): joystick | pet dock | action button */
+  .joy { grid-area: dpad; position: relative; width: 150px; height: 150px; touch-action: none; }
+  .joy-ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid #f4ecd0;
+              background: radial-gradient(circle, rgba(63,138,192,.55), rgba(14,42,74,.75)); box-shadow: inset 0 0 0 3px #0e2a4a; }
+  .joy-knob { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; border-radius: 50%; transform: translate(-50%, -50%);
+              background: linear-gradient(180deg, #ffe890, #f0b840); border: 3px solid #fff4d0; box-shadow: 0 3px 0 #061528; pointer-events: none; }
+  .joy.active .joy-ring { border-color: #ffe070; }
+  body.ingame, body.ingame * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  body.ingame input { -webkit-user-select: text; user-select: text; }
+  body.ingame { touch-action: none; overscroll-behavior: none; }
+  body.ingame .side, body.ingame .menu { touch-action: pan-y; }
+  .act-btn { grid-area: act; width: 100px; height: 100px; border-radius: 50%; background: var(--gold); color: #2a1d05; text-shadow: none;
+             border-color: #b68a22; font-size: 1.15rem; line-height: 1.2; justify-self: end; align-self: center; margin-right: 6px; padding: 0; touch-action: none; }
+  .act-btn.hot { background: linear-gradient(180deg, #ff9a6a, #f05a3a); color: #fff; animation: pulse .35s infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.07); } }
+  .act-btn:active { filter: brightness(1.3); }
+  .touch { display: none !important; }
+  #panel-btn { display: none; }
+  @media (max-width: 999px), (hover: none) {
+    .playarea { grid-template-columns: 1fr; grid-template-rows: 1fr auto; grid-template-areas: "stage" "chat"; }
+    .side { position: fixed; inset: 8px; z-index: 20; background: #0f2440; border: 2px solid var(--line); border-radius: 12px; padding: 10px; display: none; }
+    .side.open { display: flex; }
+    .side-head { display: flex; }
+    #panel-btn { display: inline-block; }
+    .keys-wrap { display: none; }
+  }
+  .pet-dock { grid-area: pet; place-items: center; pointer-events: none; }
+  /* Screen-fit profiles: sizes for each phone (picked automatically) */
+  :root { --joy: 164px; --knob: 72px; --act: 116px; --act-fs: 1.35rem; --pet: 88px; --chat-min: 96px;
+          --top-fs: .92rem; --code-fs: 1.15rem; --hud-fs: .95rem; --gap: 10px; }
+  html[data-device="air"] { --joy: 164px; --knob: 72px; --act: 116px; --pet: 88px; --chat-min: 96px; }
+  html[data-device="15pro"] { --joy: 146px; --knob: 64px; --act: 104px; --act-fs: 1.2rem; --pet: 74px; --chat-min: 66px;
+          --top-fs: .84rem; --code-fs: 1.05rem; --hud-fs: .88rem; --gap: 8px; }
+  /* Short screens (Safari toolbars showing): slimmer controls and chat so the game view stays big */
+  html[data-short] { --joy: 124px; --knob: 56px; --act: 92px; --act-fs: 1.05rem; --pet: 60px; --chat-min: 74px; --gap: 6px; }
+  html[data-short] .chat { padding: 4px; } html[data-short] .chat-log { font-size: .85rem; min-height: 22px; }
+  html[data-short] .chat-form input { padding: 5px 8px; }
+  html[data-device="15pro"] .chat { padding: 4px 6px; gap: 3px; }
+  html[data-device="15pro"] .chat-log { min-height: 18px; font-size: .82rem; line-height: 1.3; }
+  html[data-device="15pro"] .chat-form input { padding: 4px 8px; }
+  html[data-device="15pro"] .chat-form button { padding: 4px 10px; font-size: .82rem; }
+  html[data-device="15pro"][data-short] { --chat-min: 58px; }
+  #pet-canvas { width: var(--pet); height: var(--pet); }
+  .pet-dock.empty { visibility: hidden; }
+  @media (hover: none), (max-width: 780px) {
+    .touch { display: grid !important; }
+    .act-btn.touch { display: block !important; }
+    /* Portrait phones: the stage hugs a square view; controls sit right under it */
+    .playarea { grid-template-columns: 1fr auto 1fr; grid-template-rows: auto auto minmax(var(--chat-min), 1fr); align-content: stretch;
+                grid-template-areas: "stage stage stage" "dpad pet act" "chat chat chat"; row-gap: var(--gap); column-gap: 4px; }
+    .chat-log { max-height: none; }
+    .stage { width: var(--stage, min(100%, calc(100dvh - 330px))); aspect-ratio: 1 / 1; justify-self: center; }
+    .joy { width: var(--joy); height: var(--joy); justify-self: start; align-self: start; margin-left: 2px; }
+    .joy-knob { width: var(--knob); height: var(--knob); }
+    .act-btn { width: var(--act); height: var(--act); font-size: var(--act-fs); align-self: start; margin: calc((var(--joy) - var(--act)) / 2) 2px 0 0; }
+    .pet-dock { align-self: start; margin-top: calc((var(--joy) - var(--pet)) / 2 - 4px); min-width: 0; }
+  }
+  @media (hover: none), (max-width: 780px) {
+    html[data-device="15pro"] .playarea { grid-template-rows: auto auto var(--chat-min); align-content: space-between; }
+    html[data-device="15pro"] .chat { height: var(--chat-min); }
+  }
+  @media (max-width: 520px) {
+    .topbar { font-size: var(--top-fs); gap: 6px; } .code { font-size: var(--code-fs); letter-spacing: 2px; }
+    .topbar button { font-size: .8rem; padding: 5px 8px; }
+    .conn { font-size: .8rem; }
+    .hudbar { font-size: var(--hud-fs); gap: 6px; }
+    .minimap { width: 58px; height: 58px; top: 5px; right: 5px; }
+    .xpbar { width: 48px; }
+  }
+  /* Phones held sideways: joystick | game | action button */
+  @media (orientation: landscape) and (max-height: 540px) {
+    .app { padding: 4px; gap: 4px; }
+    .topbar, .hudbar { padding: 3px 8px; }
+    .playarea { grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto; grid-template-areas: "dpad stage act" "dpad chat act"; align-content: stretch; }
+    .chat { flex-direction: row; padding: 4px; } .chat-log { max-height: 30px; min-height: 0; font-size: .8rem; flex: 1; } .chat-form input { padding: 4px 8px; }
+    .stage { width: auto; aspect-ratio: auto; }
+    .joy { align-self: center; width: 128px; height: 128px; margin: 0; }
+    .joy-knob { width: 56px; height: 56px; }
+    .act-btn { width: 88px; height: 88px; margin: 0; align-self: center; }
+    .pet-dock { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎣 Fish with friends</h1>
+  <p>Team up with a friend: cast a line at ponds, rivers, the lake and the sea — and fill the journal together.</p>
+</header>
+
+<main class="screens">
+  <!-- Lobby -->
+  <section id="lobby" class="lobby hidden">
+    <div class="card">
+      <div class="me-bar">
+        <canvas id="me-preview" width="96" height="96"></canvas>
+        <div class="grow"><b id="me-name-show">Angler</b><div style="color:var(--muted);font-size:.8rem" id="me-pet-show"></div></div>
+        <button id="edit-look">✏️ Edit angler</button>
+      </div>
+      <label for="my-name">Your name</label>
+      <input id="my-name" class="field" maxlength="12" placeholder="e.g. Sam" autocomplete="off">
+      <div style="margin-top:12px"><button id="create" class="btn-gold" style="width:100%;padding:10px">🎣 Create lobby</button></div>
+      <div class="or">— or join a friend —</div>
+      <div class="row"><input id="join-code" class="field code-input" maxlength="5" placeholder="CODE" autocomplete="off"><button id="join">Join lobby</button></div>
+      <div class="lobby-msg" id="lobby-msg"></div>
+    </div>
+    <div class="card recent">
+      <h3>🗂️ Your lobbies</h3>
+      <div id="recent-list"></div>
+    </div>
+  </section>
+
+  <!-- Character creator -->
+  <section id="creator" class="creator hidden">
+    <div class="card">
+      <h2>🧑‍🌾 Create your angler</h2>
+      <div class="creator-grid">
+        <div class="preview-box">
+          <canvas id="preview" width="300" height="150"></canvas>
+          <button id="randomize">🎲 Randomize</button>
+        </div>
+        <div id="options"></div>
+      </div>
+      <button class="btn-gold done-btn" id="creator-done">Let's go fishing!</button>
+    </div>
+  </section>
+</main>
+
+<!-- Game -->
+<section id="game-screen" class="app hidden">
+  <div class="topbar">
+    <span>Lobby</span><span class="code" id="code-show"></span>
+    <span class="conn" id="conn">Waiting for your friend…</span>
+    <button id="invite">🔗 Invite</button>
+    <button id="zoom-btn" title="Zoom">🗺️</button>
+    <button id="panel-btn">📊</button>
+    <button id="leave">🚪</button>
+  </div>
+  <div class="hudbar">
+    <div class="hud-chip">💰 <b id="hud-gold">0</b></div>
+    <div class="hud-chip" title="Fishing level">🎣 Lv <b id="hud-lvl">1</b><div class="xpbar"><i id="hud-xp"></i></div></div>
+    <div class="hud-chip" id="hud-time">🕕 6:00</div>
+    <div class="hud-chip" id="hud-bait" title="Bait on your hook"></div>
+    <button id="bag-btn" class="bag-btn" title="Cooler (C)"><span>🧊</span><em id="hud-cooler" style="font-style:normal">0/10</em></button>
+  </div>
+  <div class="playarea">
+    <div class="stage" id="stage">
+      <canvas id="game"></canvas>
+      <canvas id="minimap" class="minimap" width="150" height="150"></canvas>
+      <div class="toast fade" id="toast"></div>
+      <div class="menu hidden" id="menu" role="dialog" aria-modal="true">
+        <div class="menu-head"><h3 id="menu-title"></h3><button id="menu-close">✕</button></div>
+        <div class="menu-note" id="menu-note"></div>
+        <div id="menu-body"></div>
+      </div>
+    </div>
+    <div class="joy touch" id="joy" aria-label="Movement stick"><div class="joy-ring"></div><div class="joy-knob" id="joy-knob"></div></div>
+    <div class="pet-dock touch" id="pet-dock"><canvas id="pet-canvas" width="192" height="192"></canvas></div>
+    <div class="chat" id="chat">
+      <div class="chat-log" id="chat-log"></div>
+      <form class="chat-form" id="chat-form" autocomplete="off">
+        <input id="chat-input" maxlength="120" placeholder="Say something to your fishing buddy…" enterkeyhint="send">
+        <button type="submit">Send</button>
+      </form>
+    </div>
+    <button class="act-btn touch" id="act-btn">🎣<br>Cast</button>
+    <aside class="side" id="side">
+      <div class="side-head"><h3 style="margin:0">📊 Stats</h3><button id="close-side">✕ Close</button></div>
+      <div class="card player p1" id="player-0"></div>
+      <div class="card player p2" id="player-1"></div>
+      <div class="card">
+        <h3>🤝 Team progress</h3>
+        <div class="stats" id="team-stats"></div>
+        <div class="milestones" id="milestones"></div>
+      </div>
+      <div class="card">
+        <h3>📜 Fishing log</h3>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="card keys-wrap">
+        <div class="keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> walk · hold <kbd>Space</kbd> to cast, tap to hook, hold to reel · <kbd>C</kbd> cooler · <kbd>J</kbd> journal · <kbd>Z</kbd> zoom · <kbd>Esc</kbd> close</div>
+      </div>
+      <div class="side-foot">
+        <span style="color:var(--muted);font-size:.72rem">v<span class="build-tag"></span></span>
+        <button id="journal-btn">📖 Journal</button>
+        <button id="export">Export save</button>
+        <button id="import" class="host-only">Import save</button>
+        <button id="reset" class="host-only">Reset game</button>
+      </div>
+    </aside>
+  </div>
+</section>
+<input type="file" id="import-file" accept=".json,application/json" class="hidden">
+
+<script>
