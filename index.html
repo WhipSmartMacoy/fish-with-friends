@@ -273,7 +273,7 @@
   html.immersive .chat { position: fixed; z-index: 14; left: 0; right: 0; bottom: 0; height: calc(var(--chatbar) + var(--sab)) !important;
                          padding: 6px 8px calc(6px + var(--sab)) !important; border: 0; border-top: 1px solid rgba(244, 236, 208, .45); border-radius: 0;
                          flex-direction: row; align-items: center; gap: 8px; background: rgba(7, 21, 38, .94); }
-  html.immersive .chat-log { flex: 0 1 40%; max-height: 34px !important; min-height: 0 !important; font-size: .72rem !important; line-height: 1.2 !important; overflow: hidden; }
+  html.immersive .chat-log { flex: 0 1 34%; max-height: 34px !important; min-height: 0 !important; font-size: .72rem !important; line-height: 1.2 !important; overflow: hidden; }
   html.immersive .chat-form { flex: 1; min-width: 0; }
   html.immersive .chat-form input { font-size: 16px; padding: 6px 9px !important; }
   html.immersive .chat-form button { padding: 6px 10px !important; }
@@ -284,8 +284,12 @@
   html.immersive .act-col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   html.immersive .act-col button { pointer-events: auto; touch-action: none; }
   html.immersive .act-btn { width: 92px !important; height: 92px !important; margin: 0 !important; font-size: 1.15rem !important; box-shadow: 0 4px 0 #061528, inset 0 0 0 1px #0e2a4a; }
-  html.immersive .pet-dock { display: grid !important; margin: 0 !important; align-self: flex-end; }
-  html.immersive #pet-canvas { width: 66px; height: 66px; }
+  /* the pet sits on the chat bar, at the same end as the action buttons */
+  html.immersive .chat .pet-dock { display: grid !important; flex: none; order: 3; margin: -22px -2px 0 0 !important; align-self: flex-end; pointer-events: none; }
+  html.immersive.act-left .chat .pet-dock { order: -1; margin: -22px 0 0 -2px !important; }
+  html.immersive .chat .pet-dock.empty { display: none !important; }
+  html.immersive .chat #pet-canvas { width: 60px; height: 60px; }
+  html.immersive.act-left .chat #pet-canvas { transform: scaleX(-1); }
   html.immersive body.menu-open .act-cluster { display: none !important; }
   html.immersive .fjoy { position: fixed; z-index: 16; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%; pointer-events: none;
                          border: 3px solid #f4ecd0; background: radial-gradient(circle, rgba(63, 138, 192, .5), rgba(14, 42, 74, .75)); box-shadow: inset 0 0 0 3px #0e2a4a; opacity: var(--joy-op); }
@@ -838,7 +842,7 @@ function playerSprites(seat) { return lookSprites(cleanLook(state.players[seat].
 // ================= Version & fresh assets =================
 // BUILD changes with every release. Asset URLs carry it so phones can't keep showing stale images,
 // and on load we check whether the server has a newer build than the one running.
-const BUILD = "2026.11.02-1515";
+const BUILD = "2026.11.02-1530";
 const withV = url => /^(https?:|data:|blob:)/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "v=" + BUILD;
 document.querySelectorAll(".build-tag").forEach(el => el.textContent = BUILD);
 
@@ -859,6 +863,12 @@ function applyFit() {
 }
 function applyControlPrefs() {
   const p = readJSON(PREFS_KEY) || {};
+  // phones: the pet rides on the chat bar; elsewhere it stays with the action buttons
+  const pd = document.getElementById("pet-dock"), chat = document.getElementById("chat"), cl = document.getElementById("act-cluster");
+  if (pd && chat && cl) {
+    const target = document.documentElement.classList.contains("immersive") ? chat : cl;
+    if (pd.parentElement !== target) target === chat ? chat.appendChild(pd) : cl.insertBefore(pd, cl.firstChild);
+  }
   document.documentElement.classList.toggle("act-left", p.actSide === "left");
   document.documentElement.style.setProperty("--joy-op", String(1 - (p.joyClear ?? 10) / 100));
 }
